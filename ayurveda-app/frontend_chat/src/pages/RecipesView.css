@@ -1,0 +1,247 @@
+/* Premium High-Fidelity Ayurvedic Cookbook UI */
+.recipes-view {
+  --cook-font: "Playfair Display", "Outfit", serif;
+  --body-font: "Inter", "Outfit", sans-serif;
+  --c-primary: #1F2A26;
+  --c-accent: #9B6B43;
+  --c-sage: #4E6C61;
+  --c-bg: #FDFDFD;
+  --c-card: #FFFFFF;
+  --c-border: #F0F3F1;
+
+  width: 100%;
+  background: var(--c-bg);
+}
+
+.recipes-view.embedded {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.recipes-header-copy {
+  padding: 40px 0;
+  text-align: center;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.recipes-eyebrow {
+  font-family: var(--body-font);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: var(--c-accent);
+  margin-bottom: 12px;
+}
+
+.recipes-header-copy h1 {
+  font-family: var(--cook-font);
+  font-size: 2.5rem;
+  color: var(--c-primary);
+  margin-bottom: 16px;
+  line-height: 1;
+}
+
+.recipes-subtitle {
+  font-family: var(--body-font);
+  font-size: 0.95rem;
+  color: #6a7873;
+  max-width: 500px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.recipes-content {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+.recipes-intro-card {
+  background: #F4F7F6;
+  padding: 32px;
+  border-radius: 24px;
+  border: 1px solid #E2E8E5;
+  position: relative;
+  overflow: hidden;
+}
+
+.recipes-intro-card::after {
+  content: "✦";
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  color: var(--c-accent);
+  opacity: 0.2;
+}
+
+.recipes-intro-card p {
+  font-family: var(--body-font);
+  font-size: 1rem;
+  color: var(--c-primary);
+  line-height: 1.7;
+  font-weight: 500;
+  font-style: italic;
+}
+
+/* Beautiful Recipe Cards */
+.recipe-card {
+  background: var(--c-card);
+  border-radius: 40px;
+  border: 1px solid var(--c-border);
+  box-shadow: 0 20px 40px rgba(31, 42, 38, 0.03);
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0, 0, 0.2, 1);
+}
+
+.recipe-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 30px 60px rgba(31, 42, 38, 0.08);
+}
+
+.recipe-card-top {
+  padding: 24px 32px;
+  background: linear-gradient(to bottom, #F8FAF9, #FFFFFF);
+  border-bottom: 1px dashed var(--c-border);
+}
+
+.recipe-badge {
+  font-family: var(--body-font);
+  font-size: 0.65rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--c-accent);
+  background: rgba(155, 107, 67, 0.08);
+  padding: 6px 16px;
+  border-radius: 99px;
+  margin-bottom: 12px;
+  display: inline-block;
+}
+
+.recipe-title {
+  font-family: var(--cook-font);
+  font-size: 2.2rem;
+  color: var(--c-primary);
+  margin-bottom: 16px;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.recipe-intro {
+  font-family: var(--body-font);
+  font-size: 1rem;
+  color: #6a7873;
+  line-height: 1.7;
+}
+
+.recipe-sections {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.recipe-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: 1px solid var(--c-border);
+  padding-bottom: 24px;
+}
+
+.recipe-section:last-child {
+  border-bottom: none;
+}
+
+.recipe-section.recipe-section-leaf {
+  grid-column: span 2;
+  margin-top: 8px;
+  padding-top: 24px;
+  border-top: 1px solid var(--c-border);
+}
+
+.recipe-section h3 {
+  font-family: var(--body-font);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--c-primary);
+  opacity: 0.5;
+  margin-bottom: 8px;
+}
+
+.recipe-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.recipe-section li {
+  font-family: var(--body-font);
+  font-size: 0.95rem;
+  color: var(--c-primary);
+  padding-left: 20px;
+  position: relative;
+  line-height: 1.5;
+}
+
+.recipe-section li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--c-accent);
+  font-weight: bold;
+}
+
+.recipe-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.recipe-steps li {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #F8FAF9;
+  padding: 24px;
+  border-radius: 20px;
+  border: 1px solid #E2E8E5;
+}
+
+.step-label {
+  font-family: var(--body-font);
+  font-size: 0.65rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--c-accent);
+}
+
+.recipe-steps p {
+  font-family: var(--body-font);
+  font-size: 0.9rem;
+  color: var(--c-primary);
+  margin: 0;
+  line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+  .recipe-sections {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-steps {
+    grid-template-columns: 1fr;
+  }
+}
