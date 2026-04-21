@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, MapPin, Star, ShieldCheck, Clock, ArrowRight, Filter, Activity, User, Loader2, MessageSquare } from 'lucide-react';
 import { publicApi, patientApi, chatApi, doctorChatApi } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
+import { getMappedSpecialties } from '../../utils/specialtyMapping';
 
 const FindDoctors = ({ embedded, diagnosis }) => {
   const [doctors, setDoctors] = useState([]);
@@ -85,6 +86,10 @@ const FindDoctors = ({ embedded, diagnosis }) => {
         }
 
         const recommendedTreatments = rawTreatments.map(t => String(t).toLowerCase()).filter(t => t.trim().length > 0);
+        
+        // ─── NEW: MAP TREATMENTS/SYMPTOMS TO SPECIALTIES ───
+        const mappedSpecialties = getMappedSpecialties(rawTreatments).map(s => s.toLowerCase());
+        const allTargetTerms = [...new Set([...recommendedTreatments, ...mappedSpecialties])];
 
         const isMatch = (t, rt) => {
           t = t.trim(); rt = rt.trim();
@@ -95,23 +100,31 @@ const FindDoctors = ({ embedded, diagnosis }) => {
           return rt.includes(t) || t.includes(rt);
         };
 
-        if (recommendedTreatments.length > 0) {
-          // 1. Strictly filter out doctors who don't have matching treatments
+        if (allTargetTerms.length > 0) {
+          // 1. Filter out doctors who don't have matching treatments or specialties
           sorted = sorted.filter((doc) => {
             const docTreatments = (doc.professionalInfo?.treatments || []).map(t => String(t).toLowerCase());
-            const isGeneral = docTreatments.some(t => isMatch(t, 'general'));
+            const docSpec = (doc.professionalInfo?.specialization || '').toLowerCase();
+            
+            const isGeneral = docTreatments.some(t => isMatch(t, 'general')) || isMatch(docSpec, 'general');
 
-            return isGeneral || docTreatments.some(t => recommendedTreatments.some(rt => isMatch(t, rt)));
+            return isGeneral || 
+                   docTreatments.some(t => allTargetTerms.some(rt => isMatch(t, rt))) ||
+                   allTargetTerms.some(rt => isMatch(docSpec, rt));
           });
 
           // 2. Sort by match quality (most matches first)
           sorted = sorted.sort((a, b) => {
             const aTreatments = (a.professionalInfo?.treatments || []).map(t => String(t).toLowerCase());
+            const aSpec = (a.professionalInfo?.specialization || '').toLowerCase();
             const bTreatments = (b.professionalInfo?.treatments || []).map(t => String(t).toLowerCase());
+            const bSpec = (b.professionalInfo?.specialization || '').toLowerCase();
 
-            // Check for partial matches or exact matches
-            const aMatches = aTreatments.filter(t => recommendedTreatments.some(rt => isMatch(t, rt))).length;
-            const bMatches = bTreatments.filter(t => recommendedTreatments.some(rt => isMatch(t, rt))).length;
+            // Check for matches in both treatments and specialization
+            const aMatches = aTreatments.filter(t => allTargetTerms.some(rt => isMatch(t, rt))).length + 
+                            (allTargetTerms.some(rt => isMatch(aSpec, rt)) ? 1 : 0);
+            const bMatches = bTreatments.filter(t => allTargetTerms.some(rt => isMatch(t, rt))).length +
+                            (allTargetTerms.some(rt => isMatch(bSpec, rt)) ? 1 : 0);
 
             return bMatches - aMatches; // Highest match first
           });

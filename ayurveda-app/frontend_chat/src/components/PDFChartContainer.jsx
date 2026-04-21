@@ -30,7 +30,19 @@ ChartJS.register(
 const PDFChartContainer = ({ report }) => {
   if (!report) return null;
 
-  const getDoshaData = (doshaStr = "") => {
+  const getDoshaData = (doshaProfile = {}, doshaStr = "") => {
+    if (
+      typeof doshaProfile?.vata === 'number' &&
+      typeof doshaProfile?.pitta === 'number' &&
+      typeof doshaProfile?.kapha === 'number'
+    ) {
+      return {
+        vata: doshaProfile.vata,
+        pitta: doshaProfile.pitta,
+        kapha: doshaProfile.kapha,
+      };
+    }
+
     const data = { vata: 33, pitta: 33, kapha: 34 };
     const lowerStr = doshaStr.toLowerCase();
     if (lowerStr.includes('vata') && lowerStr.includes('pitta')) {
@@ -49,7 +61,7 @@ const PDFChartContainer = ({ report }) => {
     return data;
   };
 
-  const doshaData = getDoshaData(report.diagnosis?.dosha);
+  const doshaData = getDoshaData(report.doshaProfile, report.diagnosis?.dosha || report.doshaProfile?.dominant || '');
 
   const radarData = {
     labels: ['Vata', 'Pitta', 'Kapha'],
@@ -73,11 +85,16 @@ const PDFChartContainer = ({ report }) => {
     }]
   };
 
+  const severityScore =
+    report.threatLevel === 'High' ? 80 :
+      report.threatLevel === 'Moderate' ? 55 :
+        report.threatLevel === 'Low' ? 28 : 40;
+
   const barData = {
     labels: ['Score'],
     datasets: [{
       label: 'Severity',
-      data: [report.threatLevel === 'High' ? 80 : 30],
+      data: [severityScore],
       backgroundColor: report.threatLevel === 'High' ? '#9a6f53' : '#4e6c61',
     }]
   };

@@ -9,7 +9,13 @@ import json
 import os
 import asyncio
 from dotenv import load_dotenv
-from bot import extract_symptoms_from_text, get_next_question, diagnose, should_give_diagnosis
+from bot import (
+    extract_symptoms_from_text,
+    get_next_question,
+    diagnose,
+    should_give_diagnosis,
+    recommend_specialties_for_case,
+)
 from gemini_client import send, reset_trace, get_trace_snapshot
 
 load_dotenv()
@@ -144,6 +150,44 @@ def utcnow() -> datetime:
 
 def _timing_entry(stage: str, start_time: float) -> dict:
     return {"stage": stage, "latency_ms": round((perf_counter() - start_time) * 1000, 2)}
+
+
+def _report_recommendation_text(report_data: dict) -> str:
+    if not isinstance(report_data, dict):
+        return ""
+
+    for key in (
+        "integrationNote",
+        "treatmentNarrative",
+        "foodApproach",
+        "therapyGuidance",
+        "recoveryExpectation",
+        "finalClarity",
+    ):
+        value = report_data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return ""
+
+
+def _report_symptoms_text(report_data: dict) -> str:
+    if not isinstance(report_data, dict):
+        return ""
+
+    symptom_items = report_data.get("symptomsReported", [])
+    if isinstance(symptom_items, list):
+        clean_items = [s for s in symptom_items if isinstance(s, str) and s.strip()]
+        if clean_items:
+            return ", ".join(clean_items)
+
+    supporting = report_data.get("supportingFindings", [])
+    if isinstance(supporting, list):
+        clean_items = [s for s in supporting if isinstance(s, str) and s.strip()]
+        if clean_items:
+            return ", ".join(clean_items)
+
+    return ""
 
 
 def _build_telemetry(timings: list) -> dict:
@@ -483,21 +527,8 @@ async def ask(user_id: str = "default_session", data: dict = Body(...)):
                                     diagnosis_name = diagnosis_value.get("name", "")
                                 elif isinstance(diagnosis_value, str):
                                     diagnosis_name = diagnosis_value
-
-                                symptom_items = report_data.get("symptomSeverity", [])
-                                symptoms_list = []
-                                if isinstance(symptom_items, list):
-                                    for s in symptom_items:
-                                        if isinstance(s, dict) and s.get("symptom"):
-                                            symptoms_list.append(s.get("symptom"))
-                                if not symptoms_list and isinstance(report_data.get("symptomsReported"), list):
-                                    symptoms_list = report_data.get("symptomsReported", [])
-
-                                lifestyle_value = report_data.get("lifestyleChanges")
-                                if isinstance(lifestyle_value, list):
-                                    recommendations = ". ".join(lifestyle_value)
-                                else:
-                                    recommendations = lifestyle_value or ""
+                                symptoms_text = _report_symptoms_text(report_data)
+                                recommendations = _report_recommendation_text(report_data)
 
                                 report_docs.append({
                                     "patientId": session["userId"],
@@ -506,7 +537,7 @@ async def ask(user_id: str = "default_session", data: dict = Body(...)):
                                     "reportTitle": report_title,
                                     "reportData": report_data,
                                     "diagnosis": diagnosis_name or title,
-                                    "symptoms": ", ".join(symptoms_list) if symptoms_list else "",
+                                    "symptoms": symptoms_text,
                                     "recommendations": recommendations,
                                     "date": utcnow().strftime("%Y-%m-%d"),
                                     "createdAt": utcnow()
@@ -737,6 +768,19 @@ def get_symptom(symptom_id: str):
         if str(s.get('id')) == str(symptom_id):
             return s
     raise HTTPException(status_code=404, detail='Symptom not found')
+
+
+@app.post('/api/specialties/recommend')
+def recommend_specialties(data: dict = Body(...)):
+    disease_name = data.get("disease_name", "")
+    symptoms = data.get("symptoms", [])
+    available_specialties = data.get("available_specialties", [])
+
+    return recommend_specialties_for_case(
+        disease_name=disease_name,
+        symptoms=symptoms,
+        available_specialties=available_specialties,
+    )
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

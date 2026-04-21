@@ -1,116 +1,284 @@
 import React from 'react'
 import './report.css'
-import { Activity, Download, ClipboardCheck, AlertCircle, Apple, RefreshCw, Leaf, Thermometer, ShieldCheck } from 'lucide-react'
-import { sanitizeMarkdownText } from './utils/textUtils'
+import { Sparkles, Target } from 'lucide-react'
 
-function ReportRenderer({ report }) {
+function ReportRenderer({ report, reportType }) {
    if (!report) return null
 
-   const Section = ({ title, icon: Icon, children, colorClass = "text-slate-400" }) => (
-      <div className="py-8 border-b border-slate-100 last:border-0">
-         <div className="flex items-center gap-3 mb-6">
-            <div className={`p-2 rounded-lg bg-slate-50 ${colorClass}`}>
-               <Icon size={18} strokeWidth={2.5} />
+   const normalizedType = reportType === 'Risk & Health Score Report' ? 'Risk Report' : reportType
+
+   const Section = ({ title, icon: Icon, children }) => (
+      <section className="report-narrative-section">
+         <div className="report-section-head">
+            <div className="report-icon-shell">
+               <Icon size={18} strokeWidth={2.3} />
             </div>
-            <h4 className="text-[12px] font-bold text-slate-900 uppercase tracking-[1.5px]">{title}</h4>
+            <h4>{title}</h4>
          </div>
-         <div className="pl-11">
-            {children}
-         </div>
-      </div>
+         <div className="report-section-body">{children}</div>
+      </section>
    )
 
-   return (
-      <div className="bg-white text-slate-800 animate-fade-in font-sans">
-         {/* Title & Status */}
-         <div className="pb-10 border-b border-slate-100">
-            <h2 className="text-3xl font-bold text-slate-950 tracking-tight mb-4">{report.diagnosis?.name || "Clinical Assessment"}</h2>
-            <div className="flex flex-wrap items-center gap-4 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-               <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-full text-slate-600">
-                  <Activity size={12} strokeWidth={2.5} />
-                  <span>{report.diagnosis?.dosha || "Vata-Pitta"}</span>
+   const Paragraph = ({ children, subtle = false, lead = false }) => (
+      <p className={[
+         'report-paragraph',
+         subtle ? 'subtle' : '',
+         lead ? 'lead' : '',
+      ].filter(Boolean).join(' ')}>
+         {children}
+      </p>
+   )
+
+   const TextBlock = ({ value, fallback, subtle = false, lead = false }) => {
+      const finalValue = typeof value === 'string' && value.trim() ? value : fallback
+      return <Paragraph subtle={subtle} lead={lead}>{finalValue}</Paragraph>
+   }
+
+   const MultiParagraphText = ({ value, fallback, subtle = false, leadFirst = false }) => {
+      const finalValue = typeof value === 'string' && value.trim() ? value : fallback
+      const paragraphs = String(finalValue)
+         .split(/\n{2,}/)
+         .map((chunk) => chunk.trim())
+         .filter(Boolean)
+
+      return (
+         <>
+            {paragraphs.map((paragraph, index) => (
+               <Paragraph
+                  key={`${paragraph.slice(0, 24)}-${index}`}
+                  subtle={subtle}
+                  lead={leadFirst && index === 0}
+               >
+                  {paragraph}
+               </Paragraph>
+            ))}
+         </>
+      )
+   }
+
+   const ChipRow = ({ items = [] }) => {
+      const clean = items.filter((item) => typeof item === 'string' && item.trim())
+      if (!clean.length) return null
+      return (
+         <div className="report-chip-row">
+            {clean.map((item, index) => (
+               <span key={`${item}-${index}`} className="report-chip">{item}</span>
+            ))}
+         </div>
+      )
+   }
+
+   const KPIRow = ({ kpis = [] }) => {
+      if (!kpis || !kpis.length) return null
+      return (
+         <div className="report-metric-row">
+            {kpis.map((kpi, idx) => (
+               <div key={`${kpi.label}-${idx}`} className="report-metric-item">
+                  <span className="metric-label">{kpi.label}</span>
+                  <span className="metric-value">{kpi.value}</span>
                </div>
-               <div className="flex items-center gap-1.5 px-3 py-1 bg-rose-50 rounded-full text-rose-600">
-                  <AlertCircle size={12} strokeWidth={2.5} />
-                  <span>{report.threatLevel || "Standard"} Priority</span>
-               </div>
-               <div className="ml-auto text-emerald-600 flex items-center gap-1.5">
-                  <ShieldCheck size={14} strokeWidth={2.5} />
-                  <span>Verified Report</span>
-               </div>
+            ))}
+         </div>
+      )
+   }
+
+   const PainPointList = ({ points = [] }) => {
+      if (!points || !points.length) return null
+      return (
+         <div className="report-pain-points">
+            <h5>KEY CLINICAL FINDINGS</h5>
+            <ul>
+               {points.map((p, i) => <li key={i}>{p}</li>)}
+            </ul>
+         </div>
+      )
+   }
+
+   const Article = ({ themeClass, kicker, title, intro, kpis, pain_points, chapters = [], closing }) => (
+      <article className={`report-article ${themeClass}`}>
+         <header className="report-article-header">
+            <span className="report-kicker">{kicker}</span>
+            <h2>{title}</h2>
+            <KPIRow kpis={kpis} />
+            <Paragraph lead>{intro}</Paragraph>
+         </header>
+
+         <div className="report-article-body">
+            <PainPointList points={pain_points} />
+            {chapters.map((chapter, index) => (
+               <section key={`${chapter.title}-${index}`} className="report-highlight-block">
+                  <div className="report-highlight-copy">
+                     <h3>{chapter.title}</h3>
+                     <MultiParagraphText value={chapter.body} fallback={chapter.fallback} leadFirst={index === 0} />
+                  </div>
+               </section>
+            ))}
+         </div>
+
+         {closing ? (
+            <footer className="report-closing-quote">
+               <Sparkles size={18} strokeWidth={2.2} />
+               <p>{closing}</p>
+            </footer>
+         ) : null}
+      </article>
+   )
+
+   if (normalizedType === 'Diagnosis Report') {
+      return (
+         <div className="report-narrative-card diagnosis-report">
+            <div className="report-hero">
+               <span className="report-kicker">Senior Ayurvedic Impression</span>
+               <h2>{report.diagnosis?.name || 'Clinical Diagnosis'}</h2>
+               <KPIRow kpis={report.kpis} />
+               <Paragraph>{report.clinicalImpression || report.diagnosis?.reasoning || 'The case reflects a clinically meaningful Ayurvedic imbalance that deserves structured care.'}</Paragraph>
             </div>
-         </div>
 
-         {/* Narrative Rationale */}
-         <div className="py-10 bg-slate-50/30 -mx-8 px-8 border-b border-slate-100">
-            <p className="text-lg font-medium text-slate-600 leading-relaxed italic opacity-80">
-               "{report.diagnosis?.reasoning || report.doshaRecommendation || 'Systemic restoration of biological homeostasis required.'}"
-            </p>
-         </div>
+            <Section title="Diagnostic Reasoning" icon={Target}>
+               <PainPointList points={report.pain_points} />
+               <TextBlock value={report.diagnosis?.reasoning} fallback="The symptom pattern, triggers, and constitutional tendency together support this leading Ayurvedic impression." />
+               <ChipRow items={report.supportingFindings || report.symptomsReported || []} />
+            </Section>
 
-         <div className="space-y-4">
-            <Section title="Dietary Modification" icon={Apple} colorClass="text-emerald-500">
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                  <div className="space-y-2">
-                     <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest block">Inclusions (Pathya)</span>
-                     <p className="text-[13px] leading-relaxed font-semibold text-slate-800">
-                        {Array.isArray(report.dietaryGuide?.toConsume) ? report.dietaryGuide.toConsume.join(', ') : report.dietaryGuide?.toConsume || 'Nourishing sattvic intake.'}
-                     </p>
+            <Section title="Dosha Interpretation" icon={Sparkles}>
+               <div className="report-meta-grid">
+                  <div className="report-stat-card">
+                     <span>Dominant Pattern</span>
+                     <strong>{report.doshaProfile?.dominant || 'Mixed'}</strong>
                   </div>
-                  <div className="space-y-2">
-                     <span className="text-[9px] font-black text-rose-600 uppercase tracking-widest block">Exclusions (Apathya)</span>
-                     <p className="text-[13px] leading-relaxed font-semibold text-slate-800">
-                        {Array.isArray(report.dietaryGuide?.toAvoid) ? report.dietaryGuide.toAvoid.join(', ') : report.dietaryGuide?.toAvoid || 'Agitating or processed stimuli.'}
-                     </p>
+                  <div className="report-stat-card">
+                     <span>Clinical Priority</span>
+                     <strong>{report.threatLevel || 'Moderate'}</strong>
                   </div>
                </div>
-            </Section>
-
-            <Section title="Lifestyle Protocol" icon={RefreshCw} colorClass="text-blue-500">
-               <p className="text-[13px] leading-loose font-semibold text-slate-700">
-                  {Array.isArray(report.lifestyleChanges) ? report.lifestyleChanges.join('. ') : report.lifestyleChanges || 'Adherence to vertical rhythms.'}
-               </p>
-            </Section>
-
-            {report.treatments && report.treatments.length > 0 && (
-               <Section title="Clinical Modalities" icon={ClipboardCheck} colorClass="text-slate-600">
-                  <div className="flex flex-wrap gap-2">
-                     {report.treatments.map((t, i) => (
-                        <span key={i} className="text-[10px] font-bold px-3 py-1 bg-slate-50 text-slate-600 rounded-md border border-slate-100 tracking-wide uppercase">✦ {t}</span>
-                     ))}
-                  </div>
-               </Section>
-            )}
-
-            <Section title="Herbal Management" icon={Leaf} colorClass="text-ayur-sage">
-               <div className="space-y-6">
-                  {report.herbalPreparations && report.herbalPreparations.length > 0 ? (
-                     report.herbalPreparations.map((h, i) => (
-                        <div key={i} className="border-l-2 border-slate-100 pl-4 py-1 space-y-1">
-                           <h5 className="font-bold text-slate-900 text-sm tracking-tight">{h.name}</h5>
-                           <p className="text-[11px] font-medium text-slate-400 italic leading-snug">{h.purpose}</p>
-                           {h.safety && (
-                              <div className="text-[9px] font-bold text-amber-600 uppercase flex items-center gap-1.5 mt-2">
-                                 <AlertCircle size={10} strokeWidth={3} />
-                                 {h.safety}
-                              </div>
-                           )}
-                        </div>
-                     ))
-                  ) : (
-                     <p className="text-[11px] font-medium text-slate-300 italic">No specific herbal preparations assigned.</p>
-                  )}
-               </div>
-            </Section>
-
-            <Section title="Prognosis" icon={Thermometer} colorClass="text-slate-900">
-               <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
-                  <p className="text-sm font-bold text-slate-600 italic">"{report.prognosis || 'Favorable outcome expected with protocol adherence.'}"</p>
-               </div>
+               <Paragraph subtle>{report.doshaProfile?.interpretation || 'The dosha picture should be interpreted through the full symptom history rather than as an isolated score.'}</Paragraph>
             </Section>
          </div>
-      </div>
+      )
+   }
+
+   if (normalizedType === 'Root Cause Report') {
+      return (
+         <Article
+            themeClass="root-cause-report"
+            kicker="Pathology Lens"
+            title={reportType || 'Root Cause Report'}
+            kpis={report.kpis}
+            pain_points={report.pain_points}
+            intro="A clinical reading of how the imbalance likely took shape and began expressing itself through symptoms."
+            chapters={[
+               {
+                  title: 'Disease Formation Narrative',
+                  body: report.section1_content || report.diseaseFormation,
+                  fallback: 'Imbalance formed gradually through repeated structural or metabolic disturbance.'
+               },
+               {
+                  title: 'Holistic guidance and clinical protocol summary',
+                  body: report.section2_content || report.amaEvolution || report.amaStatus,
+                  fallback: 'Small daily aggravators accumulated into a persistent clinical pattern.'
+               }
+            ]}
+         />
+      )
+   }
+
+   if (normalizedType === 'Lifestyle Report') {
+      return (
+         <Article
+            themeClass="lifestyle-report"
+            kicker="Daily Rhythm"
+            title={reportType || 'Lifestyle Report'}
+            kpis={report.kpis}
+            pain_points={report.pain_points}
+            intro="A livable rhythm defined by biological triggers and metabolic capacity."
+            chapters={[
+               {
+                  title: 'Daily Rhythm Script',
+                  body: report.section1_content || report.morningFlow,
+                  fallback: 'Structured approach to daily activity, rest, and metabolic windows.'
+               },
+               {
+                  title: 'Holistic guidance and clinical protocol summary',
+                  body: report.section2_content || report.integrationNote,
+                  fallback: 'Consistency within the daily rhythm is the primary anchor for recovery.'
+               }
+            ]}
+         />
+      )
+   }
+
+   if (normalizedType === 'Treatment Plan Report') {
+      return (
+         <Article
+            themeClass="treatment-report"
+            kicker="Therapeutic Strategy"
+            title={reportType || 'Treatment Plan Report'}
+            kpis={report.kpis}
+            pain_points={report.pain_points}
+            intro="Calming aggravation and restoring digestive steadiness through targeted intervention."
+            chapters={[
+               {
+                  title: 'Therapeutic Strategy',
+                  body: report.section1_content || report.treatmentNarrative,
+                  fallback: 'Protocol designed to pacify acute symptoms while addressing root metabolic agni.'
+               },
+               {
+                  title: 'Holistic guidance and clinical protocol summary',
+                  body: report.section2_content || report.cautions || report.avoidances,
+                  fallback: 'Rationalized approach to diet, supports, and physical therapies.'
+               }
+            ]}
+         />
+      )
+   }
+
+   if (normalizedType === 'Risk Report') {
+      return (
+         <Article
+            themeClass="risk-report"
+            kicker="Clinical Prognosis"
+            title={reportType || 'Risk & Health Score Report'}
+            kpis={report.kpis}
+            pain_points={report.pain_points}
+            intro="Clinical assessment of potential progression and recovery benchmarks."
+            chapters={[
+               {
+                  title: 'Clinical Forecast',
+                  body: report.section1_content || report.currentAssessment,
+                  fallback: 'The present trajectory suggests an evolving picture rather than a static state.'
+               },
+               {
+                  title: 'Holistic guidance and clinical protocol summary',
+                  body: report.section2_content || report.recoveryExpectation || report.recoveryProbability,
+                  fallback: 'Progression depends on consistent adherence to the prioritized protocol.'
+               }
+            ]}
+         />
+      )
+   }
+
+   return (
+      <Article
+         themeClass="comprehensive-report"
+         kicker="Final Synthesis"
+         title={reportType || 'Comprehensive Integrated Report'}
+         kpis={report.kpis}
+         pain_points={report.pain_points}
+         intro="An integrated synthesis of metabolic patterns, routine, and systemic resilience."
+         chapters={[
+            {
+               title: 'Integrated Synthesis',
+               body: report.section1_content || report.synthesis || report.mindBodyLink,
+               fallback: 'Connecting physical symptoms with systemic metabolic and emotional drivers.'
+            },
+            {
+               title: 'Holistic guidance and clinical protocol',
+               body: report.section2_content || report.finalClarity || report.holisticSummary,
+               fallback: 'A unified clinical path forward to restore systemic homeostasis.'
+            }
+         ]}
+      />
    )
 }
 
-export default ReportRenderer;
+export default ReportRenderer

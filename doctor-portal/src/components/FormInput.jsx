@@ -1,6 +1,6 @@
 import React from 'react';
 
-const FormInput = ({ label, type = 'text', name, value, onChange, placeholder, required = false, className = '' }) => {
+const FormInput = ({ label, type = 'text', name, value, onChange, placeholder, required = false, className = '', readOnly = false }) => {
   return (
     <div className={`flex flex-col gap-1.5 w-full ${className}`}>
       {label && (
@@ -16,6 +16,7 @@ const FormInput = ({ label, type = 'text', name, value, onChange, placeholder, r
         onChange={onChange}
         placeholder={placeholder}
         required={required}
+        readOnly={readOnly}
         className="input-field"
       />
     </div>

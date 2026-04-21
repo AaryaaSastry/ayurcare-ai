@@ -216,6 +216,7 @@ const StepForm = ({ initialEmail, initialData, onSubmit, loading }) => {
             <FormInput 
               label="Email (Auto-linked)" 
               value={formData.basicInfo.email} 
+              readOnly={true}
               className="opacity-60 grayscale pointer-events-none"
             />
           </motion.div>

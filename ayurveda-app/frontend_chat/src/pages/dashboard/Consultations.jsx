@@ -160,10 +160,10 @@ const Consultations = () => {
                 <List size={18} strokeWidth={2.5} />
               </button>
             </div>
-            
+
             <div className="relative group/sort">
               <SlidersHorizontal className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/sort:text-slate-900 transition-colors" size={18} strokeWidth={2.5} />
-              <select 
+              <select
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value)}
                 className="pl-12 pr-10 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-600 focus:bg-white rounded-lg outline-none text-sm font-bold tracking-tight text-slate-900 appearance-none transition-all duration-300 shadow-sm cursor-pointer min-w-[180px]"
@@ -181,11 +181,11 @@ const Consultations = () => {
         {loading ? (
           viewMode === 'grid' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1,2,3].map(i => <div key={i} className="h-96 bg-slate-100 border border-slate-200 rounded-[40px] animate-pulse"></div>)}
+              {[1, 2, 3].map(i => <div key={i} className="h-96 bg-slate-100 border border-slate-200 rounded-[40px] animate-pulse"></div>)}
             </div>
           ) : (
             <div className="space-y-3">
-              {[1,2,3].map(i => <div key={i} className="h-20 bg-slate-100 border border-slate-200 rounded-lg animate-pulse"></div>)}
+              {[1, 2, 3].map(i => <div key={i} className="h-20 bg-slate-100 border border-slate-200 rounded-lg animate-pulse"></div>)}
             </div>
           )
         ) : viewMode === 'grid' ? (
@@ -193,7 +193,7 @@ const Consultations = () => {
             {sortedReports.map(report => (
               <ReportCard key={report._id} report={report} onView={() => openReportDrawer(report)} onDelete={handleDeleteReport} isListView={false} />
             ))}
-            
+
             {sortedReports.length === 0 && (
               <div className="col-span-full py-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[48px] flex flex-col items-center justify-center text-center space-y-4 animate-fade-in shadow-inner">
                 <FileText size={64} className="text-slate-200" />
@@ -211,7 +211,7 @@ const Consultations = () => {
             {sortedReports.map(report => (
               <ReportCard key={report._id} report={report} onView={() => openReportDrawer(report)} onDelete={handleDeleteReport} isListView={true} />
             ))}
-            
+
             {sortedReports.length === 0 && (
               <div className="py-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[48px] flex flex-col items-center justify-center text-center space-y-4 animate-fade-in shadow-inner">
                 <FileText size={64} className="text-slate-200" />

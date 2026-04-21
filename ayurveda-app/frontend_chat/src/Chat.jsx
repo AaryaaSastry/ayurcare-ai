@@ -426,67 +426,78 @@ const Chat = () => {
                 <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`}>
                   {msg.role === 'report' ? (
                     (() => {
-                      const payload = extractReportPayload(msg.text);
-                      const reports = normalizeReports(payload);
-                      const primaryReport = reports[0]?.reportData || null;
-                      return (
-                        <div className="w-full relative py-8 space-y-10">
-                          {primaryReport ? (
-                            <>
-                              {primaryReport && <PDFChartContainer report={primaryReport} />}
-                              <div className="space-y-8">
-                                <div className="bg-white border-2 border-slate-100 rounded-[28px] p-10 space-y-4 shadow-sm relative group overflow-hidden transition-all hover:border-black cursor-default">
-                                  <div className="absolute top-0 right-0 w-24 h-1 bg-emerald-500"></div>
-                                  <div className="flex items-center justify-between gap-3 text-emerald-600 mb-2">
-                                    <div className="flex items-center gap-3">
-                                      <ShieldCheck size={18} strokeWidth={2.5} />
-                                      <span className="text-xs font-bold tracking-tight">Biological Synthesis Verified</span>
+                        const payload = extractReportPayload(msg.text);
+                        const reports = normalizeReports(payload);
+                        const primaryReport = reports[0]?.reportData || null;
+                        return (
+                          <div className="w-full relative py-8">
+                            {primaryReport ? (
+                              <div className="max-w-[480px] mx-auto bg-white rounded-[32px] border border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.04)] overflow-hidden animate-slide-up">
+                                <div className="p-8 space-y-6">
+                                  <div className="flex items-center gap-4">
+                                    <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
+                                      <ShieldCheck size={28} strokeWidth={2} />
                                     </div>
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{reports[0]?.reportType || 'Clinical Report'}</span>
+                                    <div>
+                                      <h4 className="text-lg font-bold text-slate-900 tracking-tight">Clinical Report Prepared</h4>
+                                      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mt-0.5">Biological Synthesis Verified</p>
+                                    </div>
                                   </div>
-                                  <h3 className="text-3xl font-bold text-slate-900 tracking-tight leading-none">{reports[0]?.title || primaryReport.diagnosis?.name || 'Ayurvedic Assessment'}</h3>
-                                  <p className="text-slate-600 font-medium text-lg leading-relaxed opacity-70 line-clamp-2">
-                                    "{primaryReport.diagnosis?.reasoning || 'Systemic restoration of bodily equilibrium through focused Ayurvedic protocols.'}"
-                                  </p>
+
+                                  <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                                      <span className="text-xs font-bold text-slate-600">Ready for Download</span>
+                                    </div>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">A4 PDF Format</span>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 gap-3">
+                                    <button
+                                      onClick={() => downloadMedicalReportPDF(primaryReport, { reportType: reports[0]?.reportType, reportTitle: reports[0]?.title })}
+                                      className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-slate-900 text-white rounded-2xl text-[13px] font-bold shadow-lg shadow-slate-100 hover:bg-slate-800 transition-all active:scale-[0.98]"
+                                    >
+                                      <Download size={16} strokeWidth={3} />
+                                      <span>Download Full Report</span>
+                                    </button>
+                                    
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <button
+                                        onClick={handleRecipes}
+                                        className="flex items-center justify-center gap-2 px-4 py-3.5 bg-white border border-slate-200 text-slate-700 rounded-2xl text-[11px] font-bold hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98]"
+                                      >
+                                        <Sparkles size={14} className="text-emerald-500" />
+                                        <span>Wellness Plan</span>
+                                      </button>
+                                      <button
+                                        onClick={() => setActiveSidePanel('doctors')}
+                                        className="flex items-center justify-center gap-2 px-4 py-3.5 bg-white border border-slate-200 text-slate-700 rounded-2xl text-[11px] font-bold hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98]"
+                                      >
+                                        <Stethoscope size={14} className="text-blue-500" />
+                                        <span>Find Doctors</span>
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="flex flex-wrap justify-center gap-4">
-                                  <button
-                                    onClick={() => downloadMedicalReportPDF(primaryReport, { reportType: reports[0]?.reportType, reportTitle: reports[0]?.title })}
-                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-900 rounded-lg text-xs font-bold tracking-tight shadow-sm hover:bg-slate-50 active:scale-95 transition-all"
-                                  >
-                                    <Download size={16} strokeWidth={3} />
-                                    <span>Download</span>
-                                  </button>
-                                  <button
-                                    onClick={handleRecipes}
-                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-900 rounded-lg text-xs font-bold tracking-tight shadow-sm hover:bg-slate-50 active:scale-95 transition-all"
-                                  >
-                                    <Sparkles size={16} fill="currentColor" className="text-emerald-600" />
-                                    <span>Wellness Plan</span>
-                                  </button>
-                                  <button
-                                    onClick={() => setActiveSidePanel('doctors')}
-                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-900 rounded-lg text-xs font-bold tracking-tight shadow-sm hover:bg-slate-50 active:scale-95 transition-all"
-                                  >
-                                    <Stethoscope size={16} fill="currentColor" className="text-blue-600" />
-                                    <span>Doctors</span>
-                                  </button>
+                                <div className="bg-slate-50/50 px-8 py-3.5 border-t border-slate-100">
+                                   <div className="text-[9px] font-bold text-slate-400 text-center uppercase tracking-[0.1em]">
+                                     Your data is private and only available in the generated report.
+                                   </div>
                                 </div>
                               </div>
-                            </>
-                          ) : (
-                            <div className="bg-red-50 border border-red-100 rounded-[32px] p-10 text-center space-y-3">
-                              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-500 mx-auto">
-                                <Activity size={24} />
+                            ) : (
+                              <div className="bg-red-50 border border-red-100 rounded-[32px] p-10 text-center space-y-3">
+                                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-500 mx-auto">
+                                  <Activity size={24} />
+                                </div>
+                                <h4 className="text-red-900 font-bold uppercase text-xs tracking-widest">Analysis Failure</h4>
+                                <p className="text-red-600/60 text-sm font-medium">Internal engine could not synthesize the diagnostic data.</p>
                               </div>
-                              <h4 className="text-red-900 font-bold uppercase text-xs tracking-widest">Analysis Failure</h4>
-                              <p className="text-red-600/60 text-sm font-medium">Internal engine could not synthesize the diagnostic data.</p>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()
-                  ) : (
+                            )}
+                          </div>
+                        );
+                      })()
+                    ) : (
                     <div className={`flex gap-6 max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                       <div className={`w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center shadow-md border-2 transition-transform hover:scale-105 ${msg.role === 'user' ? 'bg-slate-100 border-slate-200 text-slate-900' : 'bg-white border-slate-200 text-emerald-600'}`}>
                         {msg.role === 'user' ? (
