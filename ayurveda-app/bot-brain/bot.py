@@ -23,8 +23,52 @@ session = {
     "reasoning": [],
     "awaiting_final_check": False,
     "question_count": 0,
-    "max_questions": 5  # Limit questions
+    "max_questions": 8  # Increased to allow deeper clinical flows
 }
+
+PRESET_TOPICS = {
+    "persistent digestion issues",
+    "sleep cycle analysis",
+    "seasonal allergy care",
+    "energy & stress management",
+    "energy and stress management",
+}
+
+BASIC_DETAIL_KEYWORDS = [
+    "age",
+    "gender",
+    "height",
+    "weight",
+    "years old",
+    "yo",
+    "male",
+    "female",
+    "cm",
+    "kg",
+]
+
+
+def _has_basic_details(history):
+    for item in history:
+        if not isinstance(item, str):
+            continue
+        if not item.startswith("User:"):
+            continue
+        text = item.replace("User:", "").strip().lower()
+        if any(k in text for k in BASIC_DETAIL_KEYWORDS):
+            return True
+    return False
+
+
+def _normalize_user_text(text):
+    return " ".join(text.strip().lower().split())
+
+
+def _first_user_issue(history):
+    for item in history:
+        if isinstance(item, str) and item.startswith("User:"):
+            return item.replace("User:", "").strip()
+    return ""
 
 def reset_session():
     """Reset the conversation session."""
@@ -95,6 +139,21 @@ def get_next_question(symptoms, history):
             "To provide an accurate assessment, could you please share your basic details? I need your Name, Age, Gender, Height, Weight, and any major lifestyle factors (like diet or sleep patterns)."
         )
 
+    # NEW: Move this UP so it catches the very first user message before detail checking
+    # 3. If user directly initiates the chat with a symptom block (e.g. they clicked a frontend suggestion)
+    if len(history) == 1:
+        user_first_msg = history[0].replace("User: ", "")
+        prompt = (
+            f"The user just started the consultation by stating: '{user_first_msg}'\n"
+            "You are 'Doc AI', a compassionate Ayurvedic assistant. Respond with high empathy.\n"
+            "Generate a response that does THREE things:\n"
+            "1. Start with a variation of: 'Hello. I’m truly sorry to hear you’re experiencing [the user's specific issue] – that can be very uncomfortable.'\n"
+            "2. Asks ONE brief follow-up question perfectly tailored to their issue to get them to explain the specific difficulty (e.g., 'To understand better, could you describe what specifically feels difficult with your digestion?').\n"
+            "3. Before proceeding, asks the user to provide their basic details: Name, age, gender, height, weight, typical diet & daily activity level.\n"
+            "Keep the response professional, compassionate, and natural. Maximum 60 words."
+        )
+        return send(prompt)
+
     # 2. Q&A MODE AFTER DIAGNOSIS (Move this checking down so it doesn't catch empty history)
     if any("---REPORT_DATA---" in str(h) for h in history):
         # Find the report content for context
@@ -113,22 +172,25 @@ def get_next_question(symptoms, history):
         )
         return send(prompt)
 
+    # Always ask for basic details first if missing
+    if not _has_basic_details(history):
+        if len(history) >= 1:
+            last_user = next((h for h in reversed(history) if isinstance(h, str) and h.startswith("User:")), "")
+            user_text = _normalize_user_text(last_user.replace("User:", ""))
+            if user_text in PRESET_TOPICS:
+                return (
+                    "I understand this can feel uncomfortable."
+                    " Please share your basic details: Name, Age, Gender, Height, Weight, and any major lifestyle factors (diet, sleep, activity)."
+                )
+
+        return (
+            "I understand this can be difficult."
+            " Please share your basic details: Name, Age, Gender, Height, Weight, and any major lifestyle factors (diet, sleep, activity)."
+        )
+
     # 2. Main Issue (after user gives details via legacy flow)
     if len(history) == 2:
         return "Thank you. Now, please describe exactly what health issue or symptoms you are experiencing today in as much detail as possible."
-
-    # 3. If user directly initiates the chat with a symptom block (e.g. they clicked a frontend suggestion)
-    if len(history) == 1:
-        user_first_msg = history[0].replace("User: ", "")
-        prompt = (
-            f"The user just started the consultation by stating: '{user_first_msg}'\n"
-            "You are an Ayurvedic AI assistant. Generate a highly empathetic response that does TWO things:\n"
-            "1. Acknowledges their specific issue and asks ONE brief follow-up question perfectly tailored to it to get them to explain their issue in deeper detail (e.g. 'Could you describe when during the day your allergy symptoms are usually worst?').\n"
-            "2. Asks the user to provide their basic details (name,age, gender, height, weight) and daily routine (diet, lifestyle, active vs sedentary) before proceeding with the full consultation.\n"
-            "Keep the response professional, small and natural"
-            "Let maximum of 50 words be used"
-        )
-        return send(prompt)
 
     # --- AI INVOLVED AFTER THIS POINT ---
     
@@ -148,19 +210,21 @@ def get_next_question(symptoms, history):
             symptom_text = rec.get('symptoms', '') if isinstance(rec, dict) else ""
             context += f"- {symptom_text}\n"
 
+    primary_issue = _first_user_issue(history)
     prompt = (
         f"Symptoms: {', '.join(symptoms)}\n"
         f"Knowledge Context: {context}\n"
         f"History: {'; '.join(history)}\n\n"
-        "Based on the symptoms and the knowledge context, ask ONE short, specific follow-up question "
-        "to differentiate between potential Ayurvedic conditions. Focus on: TIME, TRIGGERS, LOCATION, or QUALITIES. "
-        "DO NOT repeat a question already asked in History. "
-        "Return ONLY the question."
-        "ASK USER THEIR BASIC DETAILS SUCH AS AGE, HEIGHT, WEIGHT,GENDER, AND ANY MAJOR LIFESTYLE FACTORS IF NOT ALREADY MENTIONED IN THE HISTORY."
-        "Ensure you understand the major symptom that the user mentioned. questions should be only based on that"
-        "Understand the user age and gender. Ask appropriate questions based on that. For example, if the user is a woman of childbearing age, ask about menstrual cycle, pregnancy, etc. If the user is elderly, ask about chronic conditions, digestion, sleep, etc."
-        "Ask only 1 question at a time. Do not ask multiple questions. Do not ask vague questions. Be specific and focused on differentiating the diagnosis based on the symptoms and knowledge context."
-        "DO NOT USE ANY SANSKRIT TERMS IN THE QUESTION. Use simple, clear language that a general user would understand. Avoid technical jargon or Ayurvedic terms in the question. The question should be easily understandable to someone without medical knowledge."
+        f"The user's first stated issue: {primary_issue}\n"
+        "As 'Doc AI', ask ONE short, specific clinical follow-up question to find the ROOT CAUSE (Ama/Dosha) "
+        "and differentiate between potential Ayurvedic conditions. Prioritize asking about one of these at a time:\n"
+        "1. TIME: Does it happen at a specific time (morning/afternoon/evening)?\n"
+        "2. QUALITIES: Does it feel like burning (Pitta), cramping (Vata), or gas pressure/heaviness (Kapha)?\n"
+        "3. RELIEF: Is it better with WARMTH (hot tea, warm bottle) or COLD (ice pack, cold water)?\n"
+        "4. TRIGGERS: Does eating spicy, oily, or specific foods trigger it?\n"
+        "DO NOT repeat a question already asked in History. Return ONLY the question."
+        "Ask only 1 question at a time. Be specific and focused on clinical differentiation."
+        "DO NOT USE ANY SANSKRIT TERMS. Use simple, clear language."
     )
     
     response = send(prompt)
@@ -179,6 +243,10 @@ def diagnose(symptoms, history):
         dosha_profile = get_current_dosha_profile(history)
         candidates = get_candidates(symptoms, dosha_profile=dosha_profile, top_n=3)
         
+        # Integrate Vector DB for richer clinical details
+        search_query = symptoms + [history[-1]]
+        semantic_context = get_semantic_context(search_query, top_k=4)
+
         kb_context = "REFERENCE KNOWLEDGE FROM AYURVEDIC TEXTS:\n"
         if candidates:
             for c in candidates:
@@ -187,18 +255,20 @@ def diagnose(symptoms, history):
                 kb_context += f"Symptoms described in books: {rec.get('symptoms', 'N/A')}\n"
                 kb_context += f"Causes: {rec.get('causes', 'N/A')}\n"
                 kb_context += f"Treatments: {rec.get('treatment', 'N/A')}\n\n"
-        else:
-            kb_context += "No direct matches found in reference books. Use general Ayurvedic principles.\n"
+        
+        kb_context += "\nDEEP CLINICAL CONTEXT FROM TEXTBOOKS:\n"
+        kb_context += semantic_context
 
         prompt = (
             f"{kb_context}\n"
             f"USER CASE:\n"
             f"Current Symptoms: {', '.join(symptoms)}\n"
             f"Conversation History: {'; '.join(history)}\n\n"
-            "You are an Ayurvedic AI. Generate a response in exactly two parts separated by '---REPORT_DATA---'.\n"
+            "You are 'Doc AI', an expert Ayurvedic Clinician. Generate a response in exactly two parts separated by '---REPORT_DATA---'.\n"
             "\n"
             "PART 1: CHAT SUMMARY\n"
-            "Provide a short, compassionate summary (2-3 sentences) of the diagnosis for the chat window.\n"
+            "Provide a highly professional, compassionate clinical summary (3-4 sentences).\n"
+            "Identify the Ayurvedic name (e.g., Ajirna, Amavata) and explain the reasoning (e.g., 'The evening aggravation and relief with warmth point to Vata...').\n"
             "\n"
             "---REPORT_DATA---\n"
             "\n"

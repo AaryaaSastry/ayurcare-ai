@@ -84,12 +84,14 @@ const Sidebar = () => {
     e.stopPropagation();
     try {
       await chatApi.deleteSession(id);
+    } catch (err) {
+      console.warn('Delete failed on server (likely already gone or ghost session), updating UI only:', err);
+    } finally {
+      // Always remove from local UI regardless of server response result (avoids 404 block)
       setSessions(sessions.filter(s => s._id !== id));
       if (location.pathname.includes(id)) {
         navigate('/chat');
       }
-    } catch (err) {
-      console.error('Delete failed:', err);
     }
   };
 

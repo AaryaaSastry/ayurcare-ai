@@ -56,12 +56,13 @@ def send(prompt: str, max_tokens: int = 256, model: Optional[str] = None) -> str
         load_dotenv(dotenv_path=env_path)
         
         gem_key = os.getenv("GEMINI_API_KEY")
+        configured_model = os.getenv("model")
 
         if gem_key:
             client = genai.Client(api_key=gem_key)
             
-            # Use gemini-2.0-flash by default as requested/standard
-            model_name = model or "gemma-3-27b-it"
+            # Use model from .env if available, else fallback
+            model_name = model or configured_model or "gemini-2.0-flash"
 
             response = client.models.generate_content(
                 model=model_name,
@@ -79,7 +80,8 @@ def send(prompt: str, max_tokens: int = 256, model: Optional[str] = None) -> str
                 })
                 return response.text.strip()
 
-    except Exception:
+    except Exception as e:
+        print(f"❌ Gemini Error: {str(e)}")
         pass
 
     # ==========================

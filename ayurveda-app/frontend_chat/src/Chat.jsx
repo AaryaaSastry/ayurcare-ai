@@ -332,50 +332,50 @@ const Chat = () => {
   return (
     <div className="flex h-full w-full bg-[#fdfdfd] relative overflow-hidden font-sans">
       <div className="flex-1 flex flex-col h-full relative">
-        
+
         {/* Top Bar (Section A) */}
         <div className="w-full h-[60px] md:h-[70px] bg-white border-b border-gray-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)] flex items-center justify-between px-4 md:px-6 flex-shrink-0 z-10 transition-all duration-300 relative overflow-hidden">
-           
-           <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-[90px] md:px-[220px]">
-             <h1 className="text-gray-800 font-semibold text-[15px] md:text-xl text-center truncate w-full pointer-events-auto">
-               {!diagnosisCompleted ? "New Consultation" : diseaseName}
-             </h1>
-           </div>
 
-           <div className="flex-1 pointer-events-none"></div>
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-[90px] md:px-[220px]">
+            <h1 className="text-gray-800 font-semibold text-[15px] md:text-xl text-center truncate w-full pointer-events-auto">
+              {!diagnosisCompleted ? "New Consultation" : diseaseName}
+            </h1>
+          </div>
 
-           <div className="flex-shrink-0 flex justify-end gap-2 md:gap-3 z-20 relative">
-             {diagnosisCompleted && (
-                <button
-                  onClick={() => downloadReports(getSessionReports(activeSession))}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-900 rounded-lg text-xs font-bold tracking-tight shadow-sm hover:bg-slate-50 active:scale-95 transition-all pointer-events-auto whitespace-nowrap"
-                  title="Download Report"
-                >
-                  <Download size={14} strokeWidth={2.5} />
-                  <span>Reports</span>
-                </button>
-             )}
-             {diagnosisCompleted && (
-                <button
-                  onClick={handleRecipes}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-900 rounded-lg text-xs font-bold tracking-tight shadow-sm hover:bg-slate-50 active:scale-95 transition-all pointer-events-auto whitespace-nowrap"
-                  title="View Wellness Plan"
-                >
-                  <Sparkles size={14} className="text-emerald-600" />
-                  <span>Plan</span>
-                </button>
-             )}
-             {diagnosisCompleted && (
-                <button
-                  onClick={() => setActiveSidePanel('doctors')}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-900 rounded-lg text-xs font-bold tracking-tight shadow-sm hover:bg-slate-50 active:scale-95 transition-all pointer-events-auto whitespace-nowrap"
-                  title="Recommended Doctors"
-                >
-                  <Stethoscope size={14} className="text-blue-600" />
-                  <span>Doctors</span>
-                </button>
-             )}
-           </div>
+          <div className="flex-1 pointer-events-none"></div>
+
+          <div className="flex-shrink-0 flex justify-end gap-2 md:gap-3 z-20 relative">
+            {diagnosisCompleted && (
+              <button
+                onClick={() => downloadReports(getSessionReports(activeSession))}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-900 rounded-lg text-xs font-bold tracking-tight shadow-sm hover:bg-slate-50 active:scale-95 transition-all pointer-events-auto whitespace-nowrap"
+                title="Download Report"
+              >
+                <Download size={14} strokeWidth={2.5} />
+                <span>Reports</span>
+              </button>
+            )}
+            {diagnosisCompleted && (
+              <button
+                onClick={handleRecipes}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-900 rounded-lg text-xs font-bold tracking-tight shadow-sm hover:bg-slate-50 active:scale-95 transition-all pointer-events-auto whitespace-nowrap"
+                title="View Wellness Plan"
+              >
+                <Sparkles size={14} className="text-emerald-600" />
+                <span>Plan</span>
+              </button>
+            )}
+            {diagnosisCompleted && (
+              <button
+                onClick={() => setActiveSidePanel('doctors')}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-900 rounded-lg text-xs font-bold tracking-tight shadow-sm hover:bg-slate-50 active:scale-95 transition-all pointer-events-auto whitespace-nowrap"
+                title="Recommended Doctors"
+              >
+                <Stethoscope size={14} className="text-blue-600" />
+                <span>Doctors</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Messages area */}
@@ -385,20 +385,20 @@ const Chat = () => {
             {isMessagesLoading ? (
               <div className="py-24 flex flex-col items-center justify-center space-y-6">
                 <div className="relative">
-                   <div className="w-8 h-8 border-2 border-gray-200 border-t-ayur-forest rounded-full animate-spin"></div>
-                   <Activity size={12} className="absolute inset-0 m-auto text-ayur-forest animate-pulse" />
+                  <div className="w-8 h-8 border-2 border-gray-200 border-t-ayur-forest rounded-full animate-spin"></div>
+                  <Activity size={12} className="absolute inset-0 m-auto text-ayur-forest animate-pulse" />
                 </div>
                 <p className="text-[11px] font-normal text-gray-400 capitalize tracking-wide">Syncing clinical records...</p>
               </div>
             ) : (!activeSession?.messages || activeSession.messages.length === 0) ? (
               <div className="py-20 flex flex-col items-center text-center space-y-10 animate-fade-in">
                 <div className="relative">
-                   <div className="w-24 h-24 bg-white rounded-[32px] shadow-2xl border border-slate-200 flex items-center justify-center text-emerald-600 transform -rotate-3 transition-transform hover:rotate-0">
-                     <Activity size={48} />
-                   </div>
-                   <div className="absolute -top-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full border-4 border-white shadow-lg flex items-center justify-center">
-                      <ShieldCheck size={16} className="text-white" />
-                   </div>
+                  <div className="w-24 h-24 bg-white rounded-[32px] shadow-2xl border border-slate-200 flex items-center justify-center text-emerald-600 transform -rotate-3 transition-transform hover:rotate-0">
+                    <Activity size={48} />
+                  </div>
+                  <div className="absolute -top-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full border-4 border-white shadow-lg flex items-center justify-center">
+                    <ShieldCheck size={16} className="text-white" />
+                  </div>
                 </div>
                 <div className="space-y-4 max-w-[500px]">
                   <h2 className="text-5xl font-bold text-slate-900 tracking-tight leading-tight">
@@ -409,16 +409,16 @@ const Chat = () => {
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4 w-full">
-                   {['Persistent Digestion Issues', 'Sleep Cycle Analysis', 'Seasonal Allergy Care', 'Energy & Stress Management'].map(tip => (
-                      <button 
-                        key={tip}
-                        onClick={() => { setInput(tip); inputRef.current?.focus(); }}
-                        className="px-6 py-4 bg-white border border-emerald-200 rounded-[20px] text-[13px] font-bold text-emerald-600 hover:border-emerald-400 hover:bg-emerald-50/40 transition-all text-left shadow-sm group"
-                      >
-                         <span className="opacity-40 group-hover:opacity-100 transition-opacity mr-2">✦</span>
-                         {tip}
-                      </button>
-                   ))}
+                  {['Persistent Digestion Issues', 'Sleep Cycle Analysis', 'Seasonal Allergy Care', 'Energy & Stress Management'].map(tip => (
+                    <button
+                      key={tip}
+                      onClick={() => { setInput(tip); inputRef.current?.focus(); }}
+                      className="px-6 py-4 bg-white border border-emerald-200 rounded-[20px] text-[13px] font-bold text-emerald-600 hover:border-emerald-400 hover:bg-emerald-50/40 transition-all text-left shadow-sm group"
+                    >
+                      <span className="opacity-40 group-hover:opacity-100 transition-opacity mr-2">✦</span>
+                      {tip}
+                    </button>
+                  ))}
                 </div>
               </div>
             ) : (
@@ -504,15 +504,15 @@ const Chat = () => {
                         </div>
                         <div className={`rounded-[22px] text-[15px] leading-relaxed font-normal shadow-sm max-w-full overflow-hidden ${msg.role === 'user'
                           ? 'bg-slate-100 text-slate-900 border-2 border-transparent rounded-tr-none px-6 py-4.5'
-                          : msg.isThinking 
+                          : msg.isThinking
                             ? 'bg-white border-2 border-slate-200 text-slate-900 rounded-tl-none px-5 py-4'
                             : 'bg-white border-2 border-slate-200 text-slate-900 rounded-tl-none px-6 py-4.5'
                           }`}>
                           {msg.isThinking ? (
                             <div className="flex gap-1.5 items-center justify-center">
-                               <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"></span>
-                               <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                               <span className="w-2 h-2 bg-gray-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                              <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"></span>
+                              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                              <span className="w-2 h-2 bg-gray-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                             </div>
                           ) : (
                             <div className="prose prose-slate max-w-none text-black font-normal break-words" dangerouslySetInnerHTML={{ __html: sanitizeMarkdownText(msg.text) }} />
@@ -532,8 +532,8 @@ const Chat = () => {
         <div className="absolute bottom-0 left-0 right-0 p-8 pt-0 z-40 bg-gradient-to-t from-white via-white/80 to-transparent pointer-events-none">
           <div className="max-w-[800px] mx-auto pointer-events-auto mt-12 mb-4">
             <div className="relative group">
-               <div className="absolute -inset-1 bg-gray-100 rounded-[34px] blur-sm opacity-0 group-focus-within:opacity-100 transition-opacity duration-300"></div>
-               <div className="relative bg-white border-2 border-gray-100 rounded-[32px] shadow-[0_15px_40px_rgba(0,0,0,0.05)] focus-within:border-ayur-forest/30 p-2 pr-4 flex items-center transition-all duration-300">
+              <div className="absolute -inset-1 bg-gray-100 rounded-[34px] blur-sm opacity-0 group-focus-within:opacity-100 transition-opacity duration-300"></div>
+              <div className="relative bg-white border-2 border-gray-100 rounded-[32px] shadow-[0_15px_40px_rgba(0,0,0,0.05)] focus-within:border-ayur-forest/30 p-2 pr-4 flex items-center transition-all duration-300">
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -560,7 +560,7 @@ const Chat = () => {
       {/* Side Panel */}
       {activeSidePanel && (
         <div style={{ width: `${panelWidth}px` }} className="bg-white border-l border-gray-100 h-full animate-fade-in flex flex-col shadow-[0_0_100px_rgba(0,0,0,0.1)] relative z-50 flex-shrink-0 transition-none">
-          <div 
+          <div
             className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-ayur-sage/30 active:bg-ayur-sage/60 z-50 transition-colors"
             onMouseDown={startResizingPanel}
           ></div>
@@ -568,8 +568,8 @@ const Chat = () => {
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-ayur-sage to-ayur-forest"></div>
             <div>
               <div className="flex items-center gap-2 mb-1">
-                 {activeSidePanel === 'recipes' ? <Sparkles size={14} className="text-emerald-500" /> : <Stethoscope size={14} className="text-blue-500" />}
-                 <h4 className="text-[10px] font-black uppercase text-ayur-sage tracking-[3px]">{activeSidePanel === 'recipes' ? 'Wellness Strategy' : 'Practitioners'}</h4>
+                {activeSidePanel === 'recipes' ? <Sparkles size={14} className="text-emerald-500" /> : <Stethoscope size={14} className="text-blue-500" />}
+                <h4 className="text-[10px] font-black uppercase text-ayur-sage tracking-[3px]">{activeSidePanel === 'recipes' ? 'Wellness Strategy' : 'Practitioners'}</h4>
               </div>
               <h3 className="text-2xl font-black text-ayur-forest capitalize tracking-tight">{activeSidePanel === 'recipes' ? 'Wellness Plan' : 'Recommended Doctors'}</h3>
             </div>
@@ -580,11 +580,11 @@ const Chat = () => {
           <div className="flex-1 overflow-y-auto bg-gray-50/50">
             {activeSidePanel === 'recipes' ? (
               <div className="p-2">
-                 <RecipesView embedded recipes={activeSession?.recipesText || ''} />
+                <RecipesView embedded recipes={activeSession?.recipesText || ''} />
               </div>
             ) : (
               <div className="p-2 h-full">
-                 <FindDoctors embedded diagnosis={activeSession?.diagnosis} />
+                <FindDoctors embedded diagnosis={activeSession?.diagnosis} />
               </div>
             )}
           </div>
