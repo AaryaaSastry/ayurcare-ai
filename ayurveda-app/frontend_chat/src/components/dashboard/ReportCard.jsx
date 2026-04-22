@@ -2,40 +2,11 @@ import React from 'react';
 import { FileText, Download, Eye, Calendar, ShieldCheck, Loader2, Trash2 } from 'lucide-react';
 import { downloadMedicalReportPDF } from '../../utils/pdfExport';
 import { chatApi } from '../../services/api';
+import { parseReportPayload, validateAndNormalizeV2Payload } from '../../utils/reportPayload';
 
 const ReportCard = ({ report, onView, onDelete, isListView = false }) => {
   const [downloading, setDownloading] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
-
-  const extractReportPayload = (text) => {
-    if (!text) return null;
-    try {
-      if (typeof text === 'object') return text;
-      const raw = text.includes('---REPORT_DATA---') ? text.split('---REPORT_DATA---').pop() : text;
-      const clean = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-      return JSON.parse(clean);
-    } catch (_err) {
-      return null;
-    }
-  };
-
-  const normalizeReports = (payload) => {
-    if (!payload) return [];
-    if (payload.reports && Array.isArray(payload.reports)) {
-      return payload.reports
-        .filter(r => r && typeof r === 'object')
-        .map(r => ({
-          reportType: r.reportType || 'Diagnosis Report',
-          title: r.title || r.reportType || 'Clinical Report',
-          reportData: r.reportData || {}
-        }));
-    }
-    return [{
-      reportType: 'Diagnosis Report',
-      title: 'Clinical Diagnosis',
-      reportData: payload
-    }];
-  };
 
   const handleDownload = async (e) => {
     if (e) e.stopPropagation();
@@ -52,8 +23,12 @@ const ReportCard = ({ report, onView, onDelete, isListView = false }) => {
       if (report.sessionId) {
         const res = await chatApi.getSession(report.sessionId);
         const sessionData = res.data;
-        const payload = extractReportPayload(sessionData.diagnosis);
-        const reports = normalizeReports(payload);
+        const payload = parseReportPayload(sessionData.diagnosis);
+        const normalized = validateAndNormalizeV2Payload(payload);
+        if (!normalized.valid) {
+          throw new Error(normalized.reason || 'Invalid reports.v2 payload');
+        }
+        const reports = normalized.reports;
         const match = reports.find(r => r.reportType === report.reportType) || reports[0];
         if (match && match.reportData) {
           const diagObj = match.reportData;
@@ -77,7 +52,7 @@ const ReportCard = ({ report, onView, onDelete, isListView = false }) => {
       }
     } catch (err) {
       console.error('Failed to download report:', err);
-      downloadMedicalReportPDF({ diagnosis: report.diagnosis });
+      alert('Unable to download: report format is invalid or outdated.');
     } finally {
       setDownloading(false);
     }

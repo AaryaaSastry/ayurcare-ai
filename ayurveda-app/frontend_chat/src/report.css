@@ -86,6 +86,36 @@
   color: #2D3748; /* Darker, more clinical text */
 }
 
+/* Threat Level Highlighting */
+.report-metric-item.threat-low .metric-value {
+  color: #2f855a; /* Green */
+}
+
+.report-metric-item.threat-medium .metric-value {
+  color: #b7791f; /* Yellow/Orange */
+}
+
+.report-metric-item.threat-high .metric-value {
+  color: #c53030; /* Red */
+}
+
+/* Bullet List Styling */
+.report-bullet-list {
+  margin: 1rem 0;
+  padding-left: 1.25rem;
+  list-style-type: disc;
+}
+
+.report-bullet-list li {
+  margin-bottom: 0.5rem;
+  color: #4a5568;
+  position: relative;
+}
+
+.report-bullet-list li::marker {
+  color: #cbd5e0;
+}
+
 .report-pain-points {
   margin-bottom: 2rem;
   padding: 0; /* Removed padding */

@@ -439,6 +439,171 @@ def _generate_specialist_report(report_type, title, persona, objective, schema, 
         "reportData": _narrative_fallback_report(report_type, title, symptoms, dosha_profile)
     }
 
+
+def _clean_text(value, default=""):
+    if isinstance(value, str):
+        cleaned = re.sub(r"\s+", " ", value).strip()
+        return cleaned if cleaned else default
+    return default
+
+
+def _listify_strings(value, max_items=8):
+    items = []
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, str):
+        chunks = re.split(r"[\n,;]+", value)
+        items = [c.strip() for c in chunks if c.strip()]
+
+    clean = []
+    seen = set()
+    for item in items:
+        text = _clean_text(str(item).lstrip("-• ").strip())
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        clean.append(text)
+        if len(clean) >= max_items:
+            break
+    return clean
+
+
+def _normalize_kpis(value, max_items=6):
+    if not isinstance(value, list):
+        return []
+    out = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        label = _clean_text(item.get("label"))
+        kpi_value = _clean_text(item.get("value"))
+        if not label or not kpi_value:
+            continue
+        out.append({"label": label, "value": kpi_value})
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _normalize_specialist_report(report_type, title, report_obj, symptoms, dosha_profile):
+    fallback = _narrative_fallback_report(report_type, title, symptoms, dosha_profile)
+    src = {}
+    if isinstance(report_obj, dict) and isinstance(report_obj.get("reportData"), dict):
+        src = report_obj.get("reportData")
+
+    if report_type == "Diagnosis Report":
+        diagnosis_src = src.get("diagnosis") if isinstance(src.get("diagnosis"), dict) else {}
+        diagnosis_fb = fallback.get("diagnosis") if isinstance(fallback.get("diagnosis"), dict) else {}
+        report_data = {
+            "kpis": _normalize_kpis(src.get("kpis")) or _normalize_kpis(fallback.get("kpis")),
+            "pain_points": _listify_strings(src.get("pain_points")) or _listify_strings(fallback.get("pain_points")),
+            "diagnosis": {
+                "name": _clean_text(diagnosis_src.get("name"), _clean_text(diagnosis_fb.get("name"), "Ayurvedic Clinical Impression")),
+                "reasoning": _clean_text(diagnosis_src.get("reasoning"), _clean_text(diagnosis_fb.get("reasoning"), "Clinical reasoning based on symptom pattern and dosha tendency.")),
+            },
+            "clinicalImpression": _clean_text(src.get("clinicalImpression"), _clean_text(fallback.get("clinicalImpression"))),
+            "supportingFindings": _listify_strings(src.get("supportingFindings")) or _listify_strings(fallback.get("supportingFindings")),
+            "doshaProfile": src.get("doshaProfile") if isinstance(src.get("doshaProfile"), dict) else fallback.get("doshaProfile"),
+            "threatLevel": _clean_text(src.get("threatLevel"), _clean_text(fallback.get("threatLevel"), "Moderate")),
+            "symptomsReported": _listify_strings(src.get("symptomsReported")) or _listify_strings(fallback.get("symptomsReported")),
+        }
+        return {"reportType": report_type, "title": title, "reportData": report_data}
+
+    # Standard non-diagnosis specialty reports
+    # We omit kpis and pain_points here to move them exclusively to the Master Report
+    report_data = {
+        "content": _clean_text(src.get("content"), _clean_text(src.get("section1_content"), _clean_text(fallback.get("content", fallback.get("morningFlow", fallback.get("diseaseFormation", fallback.get("treatmentNarrative", fallback.get("currentAssessment")))))))),
+    }
+
+    if report_type == "Root Cause Report":
+        report_data["technical_notes"] = _clean_text(src.get("technical_notes"), _clean_text(src.get("section2_content"), _clean_text(fallback.get("amaEvolution"))))
+    
+    elif report_type == "Lifestyle Report":
+        report_data["routine_steps"] = _listify_strings(src.get("routine_steps")) or _listify_strings(src.get("section2_content")) or _listify_strings(fallback.get("integrationNote"))
+    
+    elif report_type == "Treatment Plan Report":
+        report_data["remedies"] = _listify_strings(src.get("remedies")) or _listify_strings(src.get("section2_content")) or _listify_strings(fallback.get("foodApproach"))
+    
+    elif report_type == "Risk Report":
+        report_data["prognosis"] = _clean_text(src.get("prognosis"), _clean_text(src.get("section2_content"), _clean_text(fallback.get("longTermForecast"))))
+        report_data["red_flags"] = _listify_strings(src.get("red_flags")) or _listify_strings(fallback.get("shortTermOutlook"))
+
+    return {"reportType": report_type, "title": title, "reportData": report_data}
+
+    return {"reportType": report_type, "title": title, "reportData": fallback}
+
+
+def _build_master_fallback(normalized_specialty_reports):
+    by_type = {r.get("reportType"): r.get("reportData", {}) for r in normalized_specialty_reports if isinstance(r, dict)}
+    diagnosis_data = by_type.get("Diagnosis Report", {})
+    root_data = by_type.get("Root Cause Report", {})
+    life_data = by_type.get("Lifestyle Report", {})
+    tx_data = by_type.get("Treatment Plan Report", {})
+    risk_data = by_type.get("Risk Report", {})
+
+    diagnosis_name = ""
+    diagnosis_obj = diagnosis_data.get("diagnosis")
+    if isinstance(diagnosis_obj, dict):
+        diagnosis_name = _clean_text(diagnosis_obj.get("name"))
+
+    integrated_parts = [
+        f"Primary Ayurvedic impression: {diagnosis_name}." if diagnosis_name else "",
+        _clean_text(diagnosis_data.get("clinicalImpression")),
+        _clean_text(root_data.get("content")),
+        _clean_text(risk_data.get("prognosis")),
+    ]
+    integrated_synthesis = " ".join([p for p in integrated_parts if p]).strip() or "Integrated synthesis prepared from specialist assessments."
+
+    protocol_lines = []
+    for step in _listify_strings(life_data.get("routine_steps"), max_items=5):
+        protocol_lines.append(f"Lifestyle: {step}")
+    for remedy in _listify_strings(tx_data.get("remedies"), max_items=5):
+        protocol_lines.append(f"Therapeutics: {remedy}")
+    for flag in _listify_strings(risk_data.get("red_flags"), max_items=3):
+        protocol_lines.append(f"Watch for: {flag}")
+    clinical_protocol = " ".join(protocol_lines).strip() or "Follow structured daily routine, individualized therapeutics, and close symptom monitoring."
+
+    master_kpis = _normalize_kpis(diagnosis_data.get("kpis"))
+    if not master_kpis and diagnosis_name:
+        master_kpis = [{"label": "Primary Impression", "value": diagnosis_name}]
+
+    master_pain_points = _listify_strings(diagnosis_data.get("pain_points"), max_items=6)
+    if not master_pain_points:
+        master_pain_points = _listify_strings(diagnosis_data.get("supportingFindings"), max_items=6)
+
+    return {
+        "reportType": "Master Report",
+        "title": "Integrated Clinical Synthesis",
+        "reportData": {
+            "integrated_synthesis": integrated_synthesis,
+            "clinical_protocol": clinical_protocol,
+            "master_kpis": master_kpis,
+            "master_pain_points": master_pain_points,
+        },
+    }
+
+
+def _normalize_master_report(master_obj, normalized_specialty_reports):
+    fallback = _build_master_fallback(normalized_specialty_reports)
+    src = {}
+    if isinstance(master_obj, dict) and isinstance(master_obj.get("reportData"), dict):
+        src = master_obj.get("reportData")
+
+    report_data = {
+        "integrated_synthesis": _clean_text(src.get("integrated_synthesis"), fallback["reportData"]["integrated_synthesis"]),
+        "clinical_protocol": _clean_text(src.get("clinical_protocol"), fallback["reportData"]["clinical_protocol"]),
+        "master_kpis": _normalize_kpis(src.get("master_kpis")) or fallback["reportData"]["master_kpis"],
+        "master_pain_points": _listify_strings(src.get("master_pain_points"), max_items=8) or fallback["reportData"]["master_pain_points"],
+    }
+    return {
+        "reportType": "Master Report",
+        "title": _clean_text(master_obj.get("title") if isinstance(master_obj, dict) else "", "Integrated Clinical Synthesis"),
+        "reportData": report_data,
+    }
+
 def reset_session():
     """Reset the conversation session."""
     global session
@@ -654,44 +819,37 @@ def diagnose(symptoms, history):
                 "title": "Disease Formation Narrative",
                 "persona": "Ayurvedic Pathology Expert",
                 "objective": "Explain disease formation and holistic guidance.",
-                "schema": "{ \"kpis\": [{\"label\": \"...\", \"value\": \"...\"}], \"pain_points\": [\"...\"], \"section1_content\": \"...\", \"section2_title\": \"Holistic guidance and clinical protocol summary\", \"section2_content\": \"...\" }",
-                "style_rules": "- section1 title: 'Disease Formation Narrative'.\n- section1 weight: 70-100 words max.\n- section2 weight: 70-100 words max.\n- KPI values MUST be 1-3 words max."
+                "schema": "{ \"content\": \"...\", \"technical_notes\": \"...\" }",
+                "style_rules": "- content weight: 100-150 words.\n- technical_notes: 30-50 words max.\n- DO NOT include KPIs or pain points, as they are now consolidated in the Master Report."
             },
             {
                 "reportType": "Lifestyle Report",
                 "title": "Daily Rhythm Script",
                 "persona": "Ayurvedic Lifestyle Coach",
                 "objective": "Provide a daily script and holistic guidance.",
-                "schema": "{ \"kpis\": [{\"label\": \"...\", \"value\": \"...\"}], \"pain_points\": [\"...\"], \"section1_content\": \"...\", \"section2_title\": \"Holistic guidance and clinical protocol summary\", \"section2_content\": \"...\" }",
-                "style_rules": "- section1 title: 'Daily Rhythm Script'.\n- section1 weight: 70-100 words max.\n- section2 weight: 70-100 words max.\n- KPI values MUST be 1-3 words max."
+                "schema": "{ \"content\": \"...\", \"routine_steps\": [\"...\"] }",
+                "style_rules": "- content weight: 100-150 words.\n- routine_steps: 4-6 specific daily actions.\n- DO NOT include KPIs or pain points, as they are now consolidated in the Master Report."
             },
             {
                 "reportType": "Treatment Plan Report",
                 "title": "Therapeutic Strategy",
                 "persona": "Ayurvedic Pharmacist",
                 "objective": "Explain therapeutic strategy and holistic guidance.",
-                "schema": "{ \"kpis\": [{\"label\": \"...\", \"value\": \"...\"}], \"pain_points\": [\"...\"], \"section1_content\": \"...\", \"section2_title\": \"Holistic guidance and clinical protocol summary\", \"section2_content\": \"...\" }",
-                "style_rules": "- section1 title: 'Therapeutic Strategy'.\n- section1 weight: 70-100 words max.\n- section2 weight: 70-100 words max.\n- KPI values MUST be 1-3 words max."
+                "schema": "{ \"content\": \"...\", \"remedies\": [\"...\"] }",
+                "style_rules": "- content weight: 100-150 words.\n- remedies: 3-5 specific herbs/treatments.\n- DO NOT include KPIs or pain points, as they are now consolidated in the Master Report."
             },
             {
                 "reportType": "Risk Report",
                 "title": "Clinical Forecast",
                 "persona": "Clinical Prognosticator",
                 "objective": "Describe forecast and holistic guidance.",
-                "schema": "{ \"kpis\": [{\"label\": \"...\", \"value\": \"...\"}], \"pain_points\": [\"...\"], \"section1_content\": \"...\", \"section2_title\": \"Holistic guidance and clinical protocol summary\", \"section2_content\": \"...\" }",
-                "style_rules": "- section1 title: 'Clinical Forecast'.\n- section1 weight: 70-100 words max.\n- section2 weight: 70-100 words max.\n- KPI values MUST be 1-3 words max."
-            },
-            {
-                "reportType": "Comprehensive Report",
-                "title": "Integrated Synthesis",
-                "persona": "Chief Medical Synthesizer",
-                "objective": "Provide synthesis and holistic guidance.",
-                "schema": "{ \"kpis\": [{\"label\": \"...\", \"value\": \"...\"}], \"pain_points\": [\"...\"], \"section1_content\": \"...\", \"section2_title\": \"Holistic guidance and clinical protocol\", \"section2_content\": \"...\" }",
-                "style_rules": "- section1 title: 'Integrated Synthesis'.\n- section1 weight: 70-100 words max.\n- section2 weight: 70-100 words max.\n- KPI values MUST be 1-3 words max."
+                "schema": "{ \"content\": \"...\", \"prognosis\": \"...\", \"red_flags\": [\"...\"] }",
+                "style_rules": "- content weight: 100-150 words.\n- prognosis: 1 sentence summary.\n- red_flags: 2-3 specific symptoms to watch for.\n- DO NOT include KPIs or pain points, as they are now consolidated in the Master Report."
             }
         ]
 
-        reports = [
+        # 1. Generate and normalize specialty reports
+        specialty_reports_raw = [
             _generate_specialist_report(
                 spec["reportType"],
                 spec["title"],
@@ -705,8 +863,49 @@ def diagnose(symptoms, history):
             )
             for spec in report_specs
         ]
+        specialty_reports = [
+            _normalize_specialist_report(
+                spec["reportType"],
+                spec["title"],
+                specialty_reports_raw[idx] if idx < len(specialty_reports_raw) else {},
+                symptoms,
+                dosha_profile,
+            )
+            for idx, spec in enumerate(report_specs)
+        ]
 
-        diagnosis_data = reports[0].get("reportData", {}) if reports else {}
+        # 2. Generate Master Synthesis using normalized specialist outputs
+        master_prompt = (
+            "You are the 'Chief Medical Synthesizer' for an Ayurvedic clinical team.\n"
+            "Your task is to consolidate the findings and recommendations from 5 specialists into a single, cohesive 'Master Report'.\n\n"
+            "SPECIALIST INPUTS:\n"
+            f"{json.dumps(specialty_reports, ensure_ascii=False)}\n\n"
+            "YOUR OBJECTIVE:\n"
+            "1. Resolve any contradictions between specialists.\n"
+            "2. Remove redundant phrasing while preserving all unique clinical value.\n"
+            "3. Synthesize a powerful, unified 'Integrated Synthesis' and a master 'Holistic Clinical Protocol'.\n\n"
+            "Return ONLY valid JSON with this exact top-level shape:\n"
+            "{\n"
+            '  "reportType": "Master Report",\n'
+            '  "title": "Integrated Clinical Synthesis",\n'
+            '  "reportData": {\n'
+            '    "integrated_synthesis": "...",\n'
+            '    "clinical_protocol": "...",\n'
+            '    "master_kpis": [{\"label\": \"...\", \"value\": \"...\"}],\n'
+            '    "master_pain_points": ["..."]\n'
+            '  }\n'
+            "}\n"
+        )
+        
+        master_raw = _extract_json_object(send(master_prompt, max_tokens=1200))
+        master_report = _normalize_master_report(master_raw, specialty_reports)
+
+        # Final list for the payload: keep Diagnosis first for compatibility, add Master next.
+        diagnosis_report = next((r for r in specialty_reports if r.get("reportType") == "Diagnosis Report"), None)
+        other_specialists = [r for r in specialty_reports if r.get("reportType") != "Diagnosis Report"]
+        all_reports = [x for x in [diagnosis_report, master_report, *other_specialists] if isinstance(x, dict)]
+
+        diagnosis_data = specialty_reports[0].get("reportData", {}) if specialty_reports else {}
         chat_summary_prompt = (
             "You are Doc AI, an expert Ayurvedic clinician.\n"
             "Write a compassionate but professional 3-4 sentence summary for chat.\n"
@@ -719,9 +918,11 @@ def diagnose(symptoms, history):
 
         payload = {
             "patientInfo": patient_info,
-            "reports": reports
+            "schemaVersion": "reports.v2",
+            "reports": all_reports
         }
         return f"{chat_summary}\n---REPORT_DATA---\n{json.dumps(payload, ensure_ascii=False)}"
+
     except:
         return None
 
@@ -846,4 +1047,3 @@ if __name__ == "__main__":
         session["conversation_history"].append(f"AI: {next_q}")
         session["question_count"] += 1
         print(f"\nAI: {next_q}\n")
-

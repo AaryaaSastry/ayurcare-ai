@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, MapPin, Star, ShieldCheck, Clock, ArrowRight, Filter, Activity, User, Loader2, MessageSquare } from 'lucide-react';
 import { publicApi, patientApi, chatApi, doctorChatApi } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
+import { parseReportPayload, validateAndNormalizeV2Payload } from '../../utils/reportPayload';
 import { getMappedSpecialties } from '../../utils/specialtyMapping';
 
 const FindDoctors = ({ embedded, diagnosis }) => {
@@ -70,12 +71,11 @@ const FindDoctors = ({ embedded, diagnosis }) => {
     let sorted = [...filteredDoctors];
     if (embedded && diagnosis) {
       try {
-        let diagData = diagnosis;
-        if (typeof diagnosis === 'string') {
-          const raw = diagnosis.includes('---REPORT_DATA---') ? diagnosis.split('---REPORT_DATA---').pop() : diagnosis;
-          const clean = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-          diagData = JSON.parse(clean);
-        }
+        const payload = parseReportPayload(diagnosis);
+        const normalized = validateAndNormalizeV2Payload(payload);
+        if (!normalized.valid) return [];
+        const diagReport = normalized.reports.find(r => r.reportType === 'Diagnosis Report');
+        const diagData = diagReport?.reportData || {};
         // Safely extract treatments array
         let rawTreatments = diagData?.treatments;
         if (!rawTreatments) {

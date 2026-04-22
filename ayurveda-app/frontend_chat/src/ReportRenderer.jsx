@@ -1,4 +1,4 @@
-import React from 'react'
+﻿import React from 'react'
 import './report.css'
 import { Sparkles, Target } from 'lucide-react'
 
@@ -34,8 +34,29 @@ function ReportRenderer({ report, reportType }) {
       return <Paragraph subtle={subtle} lead={lead}>{finalValue}</Paragraph>
    }
 
-   const MultiParagraphText = ({ value, fallback, subtle = false, leadFirst = false }) => {
+   const BulletList = ({ value }) => {
+      if (!value) return null
+      const lines = String(value)
+         .split(/[•\n\-\*]/)
+         .map(line => line.trim())
+         .filter(line => line.length > 0)
+      
+      if (lines.length === 0) return null
+      
+      return (
+         <ul className="report-bullet-list">
+            {lines.map((line, i) => <li key={i}>{line}</li>)}
+         </ul>
+      )
+   }
+
+   const MultiParagraphText = ({ value, fallback, subtle = false, leadFirst = false, forceBullets = false }) => {
       const finalValue = typeof value === 'string' && value.trim() ? value : fallback
+      
+      if (forceBullets || String(finalValue).includes('•') || String(finalValue).includes('- ')) {
+         return <BulletList value={finalValue} />
+      }
+
       const paragraphs = String(finalValue)
          .split(/\n{2,}/)
          .map((chunk) => chunk.trim())
@@ -72,12 +93,23 @@ function ReportRenderer({ report, reportType }) {
       if (!kpis || !kpis.length) return null
       return (
          <div className="report-metric-row">
-            {kpis.map((kpi, idx) => (
-               <div key={`${kpi.label}-${idx}`} className="report-metric-item">
-                  <span className="metric-label">{kpi.label}</span>
-                  <span className="metric-value">{kpi.value}</span>
-               </div>
-            ))}
+            {kpis.map((kpi, idx) => {
+               const label = kpi.label?.toLowerCase() || ''
+               const isThreat = label.includes('threat') || label.includes('priority') || label.includes('risk')
+               let threatClass = ''
+               if (isThreat) {
+                  const val = String(kpi.value).toLowerCase()
+                  if (val.includes('low')) threatClass = 'threat-low'
+                  else if (val.includes('medium') || val.includes('moderate')) threatClass = 'threat-medium'
+                  else if (val.includes('high') || val.includes('priority')) threatClass = 'threat-high'
+               }
+               return (
+                  <div key={`${kpi.label}-${idx}`} className={`report-metric-item ${threatClass}`}>
+                     <span className="metric-label">{kpi.label}</span>
+                     <span className="metric-value">{kpi.value}</span>
+                  </div>
+               )
+            })}
          </div>
       )
    }
@@ -87,9 +119,7 @@ function ReportRenderer({ report, reportType }) {
       return (
          <div className="report-pain-points">
             <h5>KEY CLINICAL FINDINGS</h5>
-            <ul>
-               {points.map((p, i) => <li key={i}>{p}</li>)}
-            </ul>
+            <BulletList value={points.join('\n')} />
          </div>
       )
    }
@@ -109,7 +139,12 @@ function ReportRenderer({ report, reportType }) {
                <section key={`${chapter.title}-${index}`} className="report-highlight-block">
                   <div className="report-highlight-copy">
                      <h3>{chapter.title}</h3>
-                     <MultiParagraphText value={chapter.body} fallback={chapter.fallback} leadFirst={index === 0} />
+                     <MultiParagraphText 
+                        value={chapter.body} 
+                        fallback={chapter.fallback} 
+                        leadFirst={index === 0} 
+                        forceBullets={chapter.forceBullets}
+                     />
                   </div>
                </section>
             ))}
@@ -124,36 +159,95 @@ function ReportRenderer({ report, reportType }) {
       </article>
    )
 
-   if (normalizedType === 'Diagnosis Report') {
+   if (normalizedType === 'Master Report') {
       return (
-         <div className="report-narrative-card diagnosis-report">
-            <div className="report-hero">
-               <span className="report-kicker">Senior Ayurvedic Impression</span>
-               <h2>{report.diagnosis?.name || 'Clinical Diagnosis'}</h2>
-               <KPIRow kpis={report.kpis} />
-               <Paragraph>{report.clinicalImpression || report.diagnosis?.reasoning || 'The case reflects a clinically meaningful Ayurvedic imbalance that deserves structured care.'}</Paragraph>
-            </div>
+         <Article
+            themeClass="comprehensive-report"
+            kicker="Final Synthesis"
+            title="Integrated Clinical Synthesis"
+            kpis={report.master_kpis || report.kpis}
+            pain_points={report.master_pain_points || report.pain_points}
+            intro="A consolidated clinical synthesis of metabolic patterns, specialty findings, and systemic resilience."
+            chapters={[
+               {
+                  title: 'Diagnostic Reasoning & Doshas',
+                  body: report.diagnosis?.reasoning || report.integrated_synthesis || report.section1_content || report.synthesis,
+                  fallback: 'Connecting specialty perspectives into a unified clinical narrative.'
+               },
+               {
+                  title: 'Dosha Interpretation',
+                  body: report.doshaProfile?.interpretation || 'The dosha balance is fundamental to your unique biological constitution and current clinical presentation.',
+                  forceBullets: true
+               },
+               {
+                  title: 'Herbal Medications & Treatments',
+                  body: Array.isArray(report.herbal_meds) ? report.herbal_meds.join('\n') : (report.remedies || report.section2_content),
+                  fallback: 'Specific clinical remedies to restore metabolic balance.',
+                  forceBullets: true
+               },
+               {
+                  title: 'Lifestyle Changes',
+                  body: report.lifestyle_changes || report.routine_steps,
+                  fallback: 'Daily habits and adjustments to support long-term recovery.',
+                  forceBullets: true
+               }
+            ]}
+         />
+      )
+   }
 
-            <Section title="Diagnostic Reasoning" icon={Target}>
-               <PainPointList points={report.pain_points} />
-               <TextBlock value={report.diagnosis?.reasoning} fallback="The symptom pattern, triggers, and constitutional tendency together support this leading Ayurvedic impression." />
-               <ChipRow items={report.supportingFindings || report.symptomsReported || []} />
-            </Section>
+   if (normalizedType === 'Diagnosis Report') {
+      const diagnosisKpis = report.kpis || []
+      const hasThreat = diagnosisKpis.some(k => k.label?.toLowerCase().includes('threat') || k.label?.toLowerCase().includes('priority'))
+      
+      const kpis = [...diagnosisKpis]
+      if (!hasThreat && report.threatLevel) {
+          kpis.push({ label: 'Clinical Threat Level', value: report.threatLevel })
+      }
 
-            <Section title="Dosha Interpretation" icon={Sparkles}>
-               <div className="report-meta-grid">
-                  <div className="report-stat-card">
-                     <span>Dominant Pattern</span>
-                     <strong>{report.doshaProfile?.dominant || 'Mixed'}</strong>
-                  </div>
-                  <div className="report-stat-card">
-                     <span>Clinical Priority</span>
-                     <strong>{report.threatLevel || 'Moderate'}</strong>
-                  </div>
-               </div>
-               <Paragraph subtle>{report.doshaProfile?.interpretation || 'The dosha picture should be interpreted through the full symptom history rather than as an isolated score.'}</Paragraph>
-            </Section>
-         </div>
+      const doshaIntro = "Doshas represent the biological energies governing physical and mental processes. Vata governs movement, Pitta governs metabolism, and Kapha governs structure."
+      const interpretation = report.doshaProfile?.interpretation || `As a ${report.doshaProfile?.dominant || report.diagnosis?.dosha || 'predominant'} profile, your system requires specific balancing protocols.`
+
+      return (
+         <Article
+            themeClass="diagnosis-report"
+            kicker="Senior Ayurvedic Impression"
+            title={report.diagnosis?.name || 'Clinical Diagnosis'}
+            kpis={kpis}
+            pain_points={report.pain_points}
+            intro={report.clinicalImpression || report.diagnosis?.reasoning || 'The case reflects a clinically meaningful Ayurvedic imbalance that deserves structured care.'}
+            chapters={[
+               {
+                  title: 'Diagnostic Reasoning',
+                  body: report.diagnosis?.reasoning || report.section1_content,
+                  fallback: 'The symptom pattern, triggers, and constitutional tendency together support this leading Ayurvedic impression.',
+                  forceBullets: true
+               },
+               {
+                  title: 'Dosha Interpretation',
+                  body: `**Dominant Pattern: ${report.doshaProfile?.dominant || report.diagnosis?.dosha || 'Mixed'}**\n\n${doshaIntro}\n\n${interpretation}`,
+                  forceBullets: false
+               },
+               {
+                  title: 'Lifestyle Changes',
+                  body: report.lifestyle_changes || report.lifestyleChanges || report.routine_steps || report.integrationNote,
+                  fallback: 'Daily habits and adjustments to support long-term recovery.',
+                  forceBullets: true
+               },
+               {
+                  title: 'Recommended Treatments',
+                  body: report.treatment_plan || report.treatments || report.remedies || report.treatmentNarrative,
+                  fallback: 'Standardized protocols for restoring vata-pitta-kapha balance.',
+                  forceBullets: true
+               },
+               {
+                  title: 'Herbal Medications',
+                  body: report.herbal_meds || report.herbalPreparations || report.medicinesAndSupports,
+                  fallback: 'Specific clinical remedies to restore metabolic balance.',
+                  forceBullets: true
+               }
+            ]}
+         />
       )
    }
 
@@ -169,12 +263,12 @@ function ReportRenderer({ report, reportType }) {
             chapters={[
                {
                   title: 'Disease Formation Narrative',
-                  body: report.section1_content || report.diseaseFormation,
+                  body: report.content || report.section1_content || report.diseaseFormation,
                   fallback: 'Imbalance formed gradually through repeated structural or metabolic disturbance.'
                },
                {
-                  title: 'Holistic guidance and clinical protocol summary',
-                  body: report.section2_content || report.amaEvolution || report.amaStatus,
+                  title: 'Technical Clinical Notes',
+                  body: report.technical_notes || report.section2_content || report.amaEvolution,
                   fallback: 'Small daily aggravators accumulated into a persistent clinical pattern.'
                }
             ]}
@@ -194,12 +288,12 @@ function ReportRenderer({ report, reportType }) {
             chapters={[
                {
                   title: 'Daily Rhythm Script',
-                  body: report.section1_content || report.morningFlow,
+                  body: report.content || report.section1_content || report.morningFlow,
                   fallback: 'Structured approach to daily activity, rest, and metabolic windows.'
                },
                {
-                  title: 'Holistic guidance and clinical protocol summary',
-                  body: report.section2_content || report.integrationNote,
+                  title: 'Recommended Routine Steps',
+                  body: Array.isArray(report.routine_steps) ? report.routine_steps.join('\n\n') : (report.section2_content || report.integrationNote),
                   fallback: 'Consistency within the daily rhythm is the primary anchor for recovery.'
                }
             ]}
@@ -219,12 +313,12 @@ function ReportRenderer({ report, reportType }) {
             chapters={[
                {
                   title: 'Therapeutic Strategy',
-                  body: report.section1_content || report.treatmentNarrative,
+                  body: report.content || report.section1_content || report.treatmentNarrative,
                   fallback: 'Protocol designed to pacify acute symptoms while addressing root metabolic agni.'
                },
                {
-                  title: 'Holistic guidance and clinical protocol summary',
-                  body: report.section2_content || report.cautions || report.avoidances,
+                  title: 'Specific Remedial Protocol',
+                  body: Array.isArray(report.remedies) ? report.remedies.map(r => `â€¢ ${r}`).join('\n\n') : (report.section2_content || report.cautions),
                   fallback: 'Rationalized approach to diet, supports, and physical therapies.'
                }
             ]}
@@ -244,12 +338,12 @@ function ReportRenderer({ report, reportType }) {
             chapters={[
                {
                   title: 'Clinical Forecast',
-                  body: report.section1_content || report.currentAssessment,
+                  body: report.content || report.section1_content || report.currentAssessment,
                   fallback: 'The present trajectory suggests an evolving picture rather than a static state.'
                },
                {
-                  title: 'Holistic guidance and clinical protocol summary',
-                  body: report.section2_content || report.recoveryExpectation || report.recoveryProbability,
+                  title: 'Clinical Red Flags',
+                  body: Array.isArray(report.red_flags) ? "WATCH FOR:\n" + report.red_flags.join('\n') : (report.prognosis || report.section2_content),
                   fallback: 'Progression depends on consistent adherence to the prioritized protocol.'
                }
             ]}

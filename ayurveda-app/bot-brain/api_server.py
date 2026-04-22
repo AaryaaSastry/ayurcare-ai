@@ -795,9 +795,11 @@ def _extract_title(diagnosis_text: str) -> str:
         report = json.loads(cleaned[start:end + 1])
         name = ""
         if isinstance(report.get("reports"), list) and report["reports"]:
-            first_report = report["reports"][0]
-            if isinstance(first_report, dict):
-                report_data = first_report.get("reportData") if isinstance(first_report.get("reportData"), dict) else {}
+            reports = [r for r in report["reports"] if isinstance(r, dict)]
+            diagnosis_report = next((r for r in reports if str(r.get("reportType", "")).strip().lower() == "diagnosis report"), None)
+            target = diagnosis_report or (reports[0] if reports else None)
+            if isinstance(target, dict):
+                report_data = target.get("reportData") if isinstance(target.get("reportData"), dict) else {}
                 diagnosis_value = report_data.get("diagnosis")
                 if isinstance(diagnosis_value, dict):
                     name = diagnosis_value.get("name", "")

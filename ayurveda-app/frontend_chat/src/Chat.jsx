@@ -27,6 +27,7 @@ import RecipesView from './pages/RecipesView';
 import FindDoctors from './pages/dashboard/FindDoctors';
 import { sanitizeMarkdownText } from './utils/textUtils';
 import { downloadMedicalReportPDF } from './utils/pdfExport';
+import { parseReportPayload, validateAndNormalizeV2Payload, validateAndNormalizeReportList } from './utils/reportPayload';
 import { chatApi } from './services/api';
 const Chat = () => {
   const { sessionId: routeSessionId } = useParams();
@@ -41,6 +42,7 @@ const Chat = () => {
   const [panelWidth, setPanelWidth] = useState(480);
   const [diagnosisCompleted, setDiagnosisCompleted] = useState(false);
   const [diseaseName, setDiseaseName] = useState("");
+  const [reportSchemaError, setReportSchemaError] = useState('');
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -70,49 +72,23 @@ const Chat = () => {
   const userId = userData.id || userData._id;
   const activeSession = sessions.find(s => s._id === (activeSessionId || routeSessionId));
 
-  const extractReportPayload = (text) => {
-    if (!text) return null;
-    try {
-      if (typeof text === 'object') return text;
-      const raw = text.includes('---REPORT_DATA---') ? text.split('---REPORT_DATA---').pop() : text;
-      const clean = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-      return JSON.parse(clean);
-    } catch (err) {
-      console.error('Failed to parse report JSON:', err);
-      return null;
-    }
-  };
-
-  const normalizeReports = (payload) => {
-    if (!payload) return [];
-    if (Array.isArray(payload)) return payload;
-    if (payload.reports && Array.isArray(payload.reports)) {
-      return payload.reports
-        .filter(r => r && typeof r === 'object')
-        .map(r => ({
-          reportType: r.reportType || 'Diagnosis Report',
-          title: r.title || r.reportType || 'Clinical Report',
-          reportData: r.reportData || {}
-        }));
-    }
-    return [{
-      reportType: 'Diagnosis Report',
-      title: 'Clinical Diagnosis',
-      reportData: payload
-    }];
-  };
+  const normalizeReports = (payload) => validateAndNormalizeV2Payload(payload);
 
   const getSessionReports = (session) => {
     if (!session) return [];
     if (Array.isArray(session.reports) && session.reports.length > 0) {
-      return session.reports.map(r => ({
-        reportType: r.reportType || 'Diagnosis Report',
-        title: r.title || r.reportTitle || r.reportType || 'Clinical Report',
-        reportData: r.reportData || r
-      }));
+      const normalizedFromList = validateAndNormalizeReportList(
+        session.reports.map((r) => ({
+          reportType: r?.reportType || 'Diagnosis Report',
+          title: r?.title || r?.reportTitle || r?.reportType || 'Clinical Report',
+          reportData: r?.reportData || r,
+        }))
+      );
+      return normalizedFromList.valid ? normalizedFromList.reports : [];
     }
-    const payload = extractReportPayload(session.diagnosis);
-    return normalizeReports(payload);
+    const payload = parseReportPayload(session.diagnosis);
+    const normalized = normalizeReports(payload);
+    return normalized.valid ? normalized.reports : [];
   };
 
   const downloadReports = (reports) => {
@@ -129,14 +105,20 @@ const Chat = () => {
 
   useEffect(() => {
     const reports = getSessionReports(activeSession);
-    if (reports.length > 0 || activeSession?.diagnosis) {
+    if (reports.length > 0) {
       setDiagnosisCompleted(true);
       const firstReport = reports[0]?.reportData || null;
       const title = firstReport?.diagnosis?.name || activeSession?.title || "Wellness Plan";
       setDiseaseName(title);
+      setReportSchemaError('');
     } else {
       setDiagnosisCompleted(false);
       setDiseaseName("");
+      if (activeSession?.diagnosis) {
+        setReportSchemaError('Report format is invalid or outdated. Expected reports.v2 schema.');
+      } else {
+        setReportSchemaError('');
+      }
     }
   }, [activeSession?.diagnosis, activeSession?.title, activeSession?.reports]);
 
@@ -264,8 +246,14 @@ const Chat = () => {
       const data = res.data;
 
       if (data.type === 'diagnosis') {
-        const payload = extractReportPayload(data.content);
-        const reports = normalizeReports(payload);
+        const payload = parseReportPayload(data.content);
+        const normalized = normalizeReports(payload);
+        const reports = normalized.valid ? normalized.reports : [];
+        if (!normalized.valid) {
+          setReportSchemaError(normalized.reason || 'Invalid report schema');
+        } else {
+          setReportSchemaError('');
+        }
         setSessions(prev => prev.map(s => s._id === sessId ? {
           ...s,
           diagnosis: data.content,
@@ -275,7 +263,15 @@ const Chat = () => {
         setTimeout(() => {
           setSessions(prev => prev.map(s => s._id === sessId ? {
             ...s,
-            messages: [...s.messages, { role: 'bot', text: 'Diagnostic analysis complete. A personalized wellness plan with custom recipes will be generated according to your report. I have also compiled a list of recommended doctors based on the required treatments. You can access these by clicking the buttons next to your report.' }]
+            messages: [
+              ...s.messages,
+              {
+                role: 'bot',
+                text: normalized.valid
+                  ? 'Diagnostic analysis complete. A personalized wellness plan with custom recipes will be generated according to your report. I have also compiled a list of recommended doctors based on the required treatments. You can access these by clicking the buttons next to your report.'
+                  : 'Diagnostic output was received, but the report schema is invalid for this app version. Please regenerate the report.'
+              }
+            ]
           } : s));
         }, 1000);
       } else {
@@ -378,6 +374,12 @@ const Chat = () => {
           </div>
         </div>
 
+        {reportSchemaError ? (
+          <div className="mx-6 mt-4 px-4 py-3 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm font-semibold">
+            {reportSchemaError}
+          </div>
+        ) : null}
+
         {/* Messages area */}
         <div className={`flex-1 w-full overflow-y-auto scroll-smooth pb-[160px] custom-scrollbar ${activeSession?.diagnosis ? 'pt-8' : ''}`}>
           <div className="max-w-[800px] mx-auto px-6 py-12 space-y-10">
@@ -426,8 +428,9 @@ const Chat = () => {
                 <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`}>
                   {msg.role === 'report' ? (
                     (() => {
-                        const payload = extractReportPayload(msg.text);
-                        const reports = normalizeReports(payload);
+                        const payload = parseReportPayload(msg.text);
+                        const normalized = normalizeReports(payload);
+                        const reports = normalized.valid ? normalized.reports : [];
                         const primaryReport = reports[0]?.reportData || null;
                         return (
                           <div className="w-full relative py-8">
