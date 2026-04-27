@@ -20,6 +20,7 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'doctor_portal_secret_key_123';
+const JWT_FALLBACK_SECRETS = ['doctor_portal_secret_key_123'].filter((secret) => secret !== JWT_SECRET);
 
 // CLOUD URI - Hardcoded to ensure connection
 const MONGODB_URI = 'mongodb+srv://doc-connect:doc-connect@doc-connect.mpev56u.mongodb.net/doctor_portal?retryWrites=true&w=majority&appName=doc-connect';
@@ -89,14 +90,40 @@ const authenticateToken = (req, res, next) => {
     return res.sendStatus(401);
   }
 
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) {
-      console.log('❌ Token verification failed for:', req.method, req.url, '| Error:', err.message);
+  const verifyWithSecret = (secret) => new Promise((resolve, reject) => {
+    jwt.verify(token, secret, (err, decoded) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(decoded);
+    });
+  });
+
+  const verifyToken = async () => {
+    try {
+      const decoded = await verifyWithSecret(JWT_SECRET);
+      req.userId = decoded.userId;
+      next();
+      return;
+    } catch (primaryError) {
+      for (const fallbackSecret of JWT_FALLBACK_SECRETS) {
+        try {
+          const decoded = await verifyWithSecret(fallbackSecret);
+          req.userId = decoded.userId;
+          next();
+          return;
+        } catch (_fallbackError) {
+          // try next fallback
+        }
+      }
+
+      console.log('❌ Token verification failed for:', req.method, req.url, '| Error:', primaryError.message);
       return res.sendStatus(403);
     }
-    req.userId = decoded.userId;
-    next();
-  });
+  };
+
+  verifyToken();
 };
 
 // ─── HEALTH CHECK (No auth required) ───

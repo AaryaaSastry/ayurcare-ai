@@ -5,6 +5,7 @@ const getEntityId = (value) => String(value?._id || value);
 const roomIdFor = (chat) => `${getEntityId(chat.doctorId)}_${getEntityId(chat.userId)}`;
 
 const registerChatSocket = ({ io, jwtSecret }) => {
+  const fallbackSecrets = ['doctor_portal_secret_key_123'].filter((secret) => secret !== jwtSecret);
   const onlineUsers = new Map();
 
   const incrementOnline = (userId) => {
@@ -31,7 +32,26 @@ const registerChatSocket = ({ io, jwtSecret }) => {
         return next(new Error('Authentication required'));
       }
 
-      const decoded = jwt.verify(rawToken, jwtSecret);
+      let decoded;
+      try {
+        decoded = jwt.verify(rawToken, jwtSecret);
+      } catch (primaryError) {
+        let verified = false;
+        for (const fallbackSecret of fallbackSecrets) {
+          try {
+            decoded = jwt.verify(rawToken, fallbackSecret);
+            verified = true;
+            break;
+          } catch (_fallbackError) {
+            // try next fallback
+          }
+        }
+
+        if (!verified) {
+          throw primaryError;
+        }
+      }
+
       const actor = await getActorContext(decoded.userId);
       socket.data.actor = actor;
       socket.data.joinedRooms = new Set();
