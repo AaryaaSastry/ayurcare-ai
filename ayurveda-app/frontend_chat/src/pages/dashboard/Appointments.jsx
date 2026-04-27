@@ -8,6 +8,7 @@ const Appointments = () => {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('list');
+  const [statusFilter, setStatusFilter] = useState('confirmed');
   const [selectedAppt, setSelectedAppt] = useState(null);
   const navigate = useNavigate();
 
@@ -15,6 +16,30 @@ const Appointments = () => {
     if (!date) return null;
     return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+
+  const normalizeStatus = (status) => String(status || '').toLowerCase().trim();
+
+  const getStatusBucket = (appt) => {
+    const status = normalizeStatus(appt?.status);
+    if (status === 'cancelled' || status === 'canceled') return 'cancelled';
+    if (status === 'finished' || status === 'completed' || appt?.consultationCompleted) return 'finished';
+    if (status === 'pending' || status === 'scheduled') return 'pending';
+    if (status === 'confirmed') return 'confirmed';
+    return status || 'pending';
+  };
+
+  const filteredAppointments = appointments
+    .filter((appt) => getStatusBucket(appt) === statusFilter)
+    .sort((a, b) => {
+      const aStart = a.startTime ? new Date(a.startTime) : new Date(a.createdAt || 0);
+      const bStart = b.startTime ? new Date(b.startTime) : new Date(b.createdAt || 0);
+
+      if (statusFilter !== 'confirmed') return bStart - aStart;
+      const aUpcoming = aStart >= new Date() ? 1 : 0;
+      const bUpcoming = bStart >= new Date() ? 1 : 0;
+      if (aUpcoming !== bUpcoming) return bUpcoming - aUpcoming;
+      return aStart - bStart;
+    });
 
   useEffect(() => {
     fetchAppointments();
@@ -76,7 +101,25 @@ const Appointments = () => {
             <p className="text-slate-600 font-medium text-base leading-snug max-w-2xl">Manage and access all your scheduled health sessions in one place.</p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+              {['confirmed', 'pending', 'cancelled', 'finished'].map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setStatusFilter(f)}
+                  className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
+                    statusFilter === f
+                      ? 'bg-white text-emerald-700 shadow-sm border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  {f}
+                  <span className={`ml-2 px-2 py-0.5 rounded-md text-[10px] ${statusFilter === f ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
+                    {appointments.filter((a) => getStatusBucket(a) === f).length}
+                  </span>
+                </button>
+              ))}
+            </div>
             <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200">
               <button 
                 onClick={() => setView('grid')}
@@ -119,9 +162,17 @@ const Appointments = () => {
              </div>
              <Link to="/find-doctors" className="px-12 py-3 bg-slate-900 text-white rounded-lg font-bold shadow-lg shadow-slate-900/20 tracking-tight text-sm hover:bg-black active:scale-95 transition-all">Find a Doctor</Link>
           </div>
+        ) : filteredAppointments.length === 0 ? (
+          <div className="py-24 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center space-y-4 bg-slate-50 shadow-inner">
+            <div className="w-16 h-16 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-300 shadow-sm">
+              <CalendarIcon size={28} strokeWidth={2.5} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 tracking-tight">No {statusFilter} appointments</h3>
+            <p className="text-slate-500 font-medium text-sm">Try another filter or book a new consultation.</p>
+          </div>
         ) : view === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-             {appointments.map(appt => (
+             {filteredAppointments.map(appt => (
                <AppointmentCard 
                  key={appt._id} 
                  appointment={appt} 
@@ -133,7 +184,7 @@ const Appointments = () => {
           </div>
         ) : (
           <div className="space-y-4">
-             {appointments.map(appt => (
+             {filteredAppointments.map(appt => (
                <AppointmentCard 
                  key={appt._id} 
                  appointment={appt} 

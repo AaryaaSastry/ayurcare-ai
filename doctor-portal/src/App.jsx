@@ -8,6 +8,7 @@ import MySchedule from './pages/MySchedule';
 import Profile from './pages/Profile';
 import Registry from './pages/Registry';
 import Messages from './pages/Messages';
+import ConsultationWorkspace from './pages/ConsultationWorkspace';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -72,6 +73,14 @@ function App() {
           element={
             <ProtectedRoute requireOnboarded={true}>
               <Registry />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/consultation/:appointmentId"
+          element={
+            <ProtectedRoute requireOnboarded={true}>
+              <ConsultationWorkspace />
             </ProtectedRoute>
           }
         />

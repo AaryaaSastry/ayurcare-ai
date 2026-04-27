@@ -73,7 +73,25 @@ const Dashboard = () => {
     }
   };
 
+  const openConsultationWorkspace = (appointmentId) => {
+    if (!appointmentId) return;
+    navigate(`/consultation/${appointmentId}`);
+  };
+
   const normalizeStatus = (status) => String(status || '').toLowerCase().trim();
+  const getAppointmentEndTime = (apt) => {
+    if (!apt?.startTime) return null;
+    const startTime = new Date(apt.startTime);
+    const duration = Number(apt.duration) || 30;
+    return apt.endTime ? new Date(apt.endTime) : new Date(startTime.getTime() + duration * 60000);
+  };
+  const isFinishedAppointment = (apt) => {
+    const status = normalizeStatus(apt?.status);
+    if (status === 'finished' || status === 'completed') return true;
+    if (status !== 'confirmed' && status !== 'scheduled') return false;
+    const endTime = getAppointmentEndTime(apt);
+    return endTime ? endTime <= new Date() : false;
+  };
 
   const parseDiagnosis = (diag) => {
     try {
@@ -255,7 +273,6 @@ const Dashboard = () => {
     try {
       const start = new Date(`${scheduleData.date}T${scheduleData.time}`);
       const end = new Date(start.getTime() + scheduleData.duration * 60000);
-
       const updateData = {
         status: 'confirmed',
         type: scheduleData.type,
@@ -264,7 +281,10 @@ const Dashboard = () => {
         duration: scheduleData.duration,
         notes: scheduleData.notes,
         fee: scheduleData.fee,
-        meetingLink: scheduleData.type === 'online' ? `https://meet.google.com/${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 5)}` : null
+        meetingType: scheduleData.type === 'online' ? 'jitsi' : 'custom',
+        roomId: null,
+        meetingLink: null,
+        meetingStatus: 'scheduled'
       };
 
       const success = await doctorService.updateAppointment(schedulingApt._id, updateData);
@@ -283,7 +303,7 @@ const Dashboard = () => {
 
   const activeAppointments = appointments.filter(a => {
     const s = normalizeStatus(a.status);
-    return s !== 'cancelled' && s !== 'canceled';
+    return s !== 'cancelled' && s !== 'canceled' && !isFinishedAppointment(a);
   });
   const cancelledByPatient = appointments.filter(a => {
     const s = normalizeStatus(a.status);
@@ -359,6 +379,20 @@ const Dashboard = () => {
     const aptDateStr = startTime.toISOString().split('T')[0];
     return aptDateStr === todayStr && endTime > now;
   }).sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+  const spotlightAppointment = dailySchedule[0] || null;
+  const spotlightStatusLabel = React.useMemo(() => {
+    if (!spotlightAppointment?.startTime) return 'Coming Up Next';
+
+    const now = new Date();
+    const start = new Date(spotlightAppointment.startTime);
+    const duration = Number(spotlightAppointment.duration) || 30;
+    const end = spotlightAppointment.endTime
+      ? new Date(spotlightAppointment.endTime)
+      : new Date(start.getTime() + duration * 60000);
+
+    return now >= start && now < end ? 'Ongoing Now' : 'Coming Up Next';
+  }, [spotlightAppointment]);
 
 
 
@@ -531,6 +565,9 @@ const Dashboard = () => {
                       
                       <div className="flex items-center gap-3 opacity-20 group-hover:opacity-100 transition-opacity">
                          <button onClick={() => openPatientChat(apt.patientId?._id || apt.patientId)} className="h-10 w-10 rounded-xl bg-white flex items-center justify-center text-slate-600 border border-slate-200 hover:border-primary-500 hover:text-primary-600 shadow-sm"><MessageSquare size={16} /></button>
+                         {String(apt.type || '').toLowerCase() === 'online' && (
+                           <button onClick={() => openConsultationWorkspace(apt._id)} className="h-10 w-10 rounded-xl bg-white flex items-center justify-center text-slate-600 border border-slate-200 hover:border-primary-500 hover:text-primary-600 shadow-sm"><Video size={16} /></button>
+                         )}
                          <button onClick={() => navigate('/schedule')} className="h-10 w-10 rounded-xl bg-white flex items-center justify-center text-slate-600 border border-slate-200 hover:border-primary-500 hover:text-primary-600 shadow-sm"><ArrowRight size={16} /></button>
                       </div>
                     </div>
@@ -549,36 +586,37 @@ const Dashboard = () => {
                <div className="h-full bg-slate-900 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-2xl flex flex-col">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/10 rounded-full -mr-20 -mt-20 blur-3xl pointer-events-none" />
                   <div className="relative z-10">
-                    <span className="text-[10px] font-black uppercase tracking-[0.25em] text-primary-400">Coming Up Next</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.25em] text-primary-400">{spotlightStatusLabel}</span>
                     
-                    {dailySchedule.length > 0 ? (
+                    {spotlightAppointment ? (
                       <div className="mt-8 flex flex-col h-full">
                         <div className="flex items-center gap-5 mb-8">
                           <div className="h-20 w-20 bg-white/10 rounded-3xl flex items-center justify-center backdrop-blur shadow-inner ring-1 ring-white/10 overflow-hidden">
-                            {dailySchedule[0].patientId?.profileImage ? (
-                               <img src={dailySchedule[0].patientId.profileImage} alt="" className="w-full h-full object-cover" />
+                            {spotlightAppointment.patientId?.profileImage ? (
+                               <img src={spotlightAppointment.patientId.profileImage} alt="" className="w-full h-full object-cover" />
                             ) : (
                                <User className="h-10 w-10 text-white opacity-90" />
                             )}
                           </div>
                           <div>
-                            <h3 className="text-xl font-black tracking-tight">{getPatientName(dailySchedule[0])}</h3>
+                            <h3 className="text-xl font-black tracking-tight">{getPatientName(spotlightAppointment)}</h3>
                             <div className="flex items-center gap-2 mt-1">
                                <Clock className="h-3 w-3 text-primary-400" />
-                               <span className="text-xs font-black text-primary-400 uppercase">{new Date(dailySchedule[0].startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                               <span className="text-xs font-black text-primary-400 uppercase">{new Date(spotlightAppointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
                           </div>
                         </div>
 
-                        <div className="space-y-3 mt-auto">
+                        <div className="space-y-3 mt-6 pb-1">
                            <button
-                             onClick={() => openPatientChat(dailySchedule[0].patientId?._id || dailySchedule[0].patientId)}
+                             onClick={() => openPatientChat(spotlightAppointment.patientId?._id || spotlightAppointment.patientId)}
                              className="w-full py-5 bg-white/10 hover:bg-white/20 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all border border-white/5"
                            >
                              Quick Message
                            </button>
                            <button
-                             className="w-full py-5 bg-primary-600 hover:bg-primary-500 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-primary-600/30 flex items-center justify-center gap-3"
+                             onClick={() => openConsultationWorkspace(spotlightAppointment._id)}
+                             className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-primary-600/30 flex items-center justify-center gap-3"
                            >
                              Launch Consultation <ArrowRight size={14} />
                            </button>
@@ -699,6 +737,15 @@ const Dashboard = () => {
                         <MessageSquare size={12} />
                         Chat
                       </button>
+                      {apt.status === 'confirmed' && String(apt.type || '').toLowerCase() === 'online' && (
+                        <button
+                          onClick={() => openConsultationWorkspace(apt._id)}
+                          className="px-4 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-black transition-colors flex items-center gap-2"
+                        >
+                          <Video size={12} />
+                          Start
+                        </button>
+                      )}
                     </div>
                   </motion.div>
                 ))}

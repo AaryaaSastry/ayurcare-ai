@@ -56,6 +56,7 @@ const MySchedule = () => {
    const [appointments, setAppointments] = useState([]);
    const [loading, setLoading] = useState(true);
    const [typeFilter, setTypeFilter] = useState('all');
+   const [statusFilter, setStatusFilter] = useState('confirmed');
    const [doctorProfile, setDoctorProfile] = useState(null);
    const [now, setNow] = useState(new Date());
 
@@ -73,6 +74,11 @@ const MySchedule = () => {
       } catch (err) {
          console.error('Failed to open patient chat:', err);
       }
+   };
+
+   const openConsultationWorkspace = (appointmentId) => {
+      if (!appointmentId) return;
+      navigate(`/consultation/${appointmentId}`);
    };
 
    const parseTimingsString = (str) => {
@@ -142,6 +148,27 @@ const MySchedule = () => {
       return idStr.toString().length > 4 ? `Patient #${idStr.toString().slice(-4)}` : "Lead";
    };
 
+   const normalizeStatus = (status) => String(status || '').toLowerCase().trim();
+
+   const getAppointmentEndTime = (apt) => {
+      if (!apt?.startTime) return null;
+      const start = new Date(apt.startTime);
+      const duration = Number(apt.duration) || 30;
+      return apt.endTime ? new Date(apt.endTime) : new Date(start.getTime() + duration * 60000);
+   };
+
+   const getStatusBucket = (apt) => {
+      const status = normalizeStatus(apt?.status);
+      if (status === 'cancelled' || status === 'canceled') return 'cancelled';
+      if (status === 'finished' || status === 'completed') return 'finished';
+      if (status === 'pending' || status === 'scheduled') return 'pending';
+      if (status === 'confirmed') {
+         const end = getAppointmentEndTime(apt);
+         return end && end <= now ? 'finished' : 'confirmed';
+      }
+      return status || 'pending';
+   };
+
    const handleDownloadPDF = (apt) => {
       const reports = parseDiagnosis(apt?.sessionData?.diagnosis);
       if (!reports.length) return alert("No clinical data available.");
@@ -158,200 +185,193 @@ const MySchedule = () => {
       const m = now.getMinutes();
       if (h < CALENDAR_START || h >= CALENDAR_END + 1) return null;
       return ((h - CALENDAR_START) * 60 + m) / 60 * HOUR_HEIGHT;
-   }, [now]);
+   }, [now]);   const statusCounts = useMemo(() => {
+      return {
+         confirmed: appointments.filter(a => getStatusBucket(a) === 'confirmed').length,
+         pending: appointments.filter(a => getStatusBucket(a) === 'pending').length,
+         cancelled: appointments.filter(a => getStatusBucket(a) === 'cancelled').length,
+         finished: appointments.filter(a => getStatusBucket(a) === 'finished').length,
+      };
+   }, [appointments, now]);
 
-   return (
+   const hasScrolled = useRef(false);
+
+   // AUTO-SCROLL TO CURRENT HOUR ON LOAD
+   useEffect(() => {
+      if (!loading && scrollRef.current && !hasScrolled.current) {
+         const container = scrollRef.current;
+         const currentHour = now.getHours();
+         // Align precisely to the start of the current hour
+         const scrollAmount = Math.max(0, (currentHour - CALENDAR_START) * 280);
+         
+         setTimeout(() => {
+            container.scrollTo({ left: scrollAmount, behavior: 'smooth' });
+            hasScrolled.current = true;
+         }, 500);
+      }
+   }, [loading]);   return (
       <div className="min-h-screen w-full bg-[#f8fafc] flex font-sans">
          <Sidebar />
 
          <main className="flex-1 ml-72 flex flex-col h-screen overflow-hidden">
-            {/* ENHANCED HEADER SECTION */}
-            <header className="flex-none px-10 pt-10 pb-6 bg-white/80 backdrop-blur-md border-b border-slate-100 z-30 shadow-sm">
+            {/* TEAMS-STYLE COMMAND CENTER HEADER (EMERALD THEME) */}
+            <header className="flex-none px-10 pt-10 pb-8 bg-white border-b border-slate-200 z-30">
                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-8">
-                     <div className="flex items-center gap-3">
-                        <div className="h-14 w-14 bg-primary-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary-600/20">
-                           <CalIcon className="h-7 w-7 text-white" />
-                        </div>
-                        <div>
-                           <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-tight">My Schedule</h1>
-                           <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Clinical Agenda</span>
-                              <span className="h-1 w-1 rounded-full bg-slate-300" />
-                              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary-600">
-                                 {weekDays[0].toLocaleDateString('default', { month: 'long', year: 'numeric' })}
-                              </span>
-                           </div>
-                        </div>
-                     </div>
-
-                     {/* CALENDAR NAVIGATION */}
-                     <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-[1.25rem] border border-slate-200 shadow-inner">
-                        <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() - 7)))} className="h-10 w-10 flex items-center justify-center hover:bg-white hover:shadow-md rounded-xl text-slate-500 hover:text-primary-600 transition-all">
-                           <ChevronLeft size={20} />
-                        </button>
-                        <button onClick={() => setCurrentDate(new Date())} className="px-6 h-10 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-primary-600 hover:bg-white hover:shadow-sm rounded-xl transition-all">
-                           Today
-                        </button>
-                        <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() + 7)))} className="h-10 w-10 flex items-center justify-center hover:bg-white hover:shadow-md rounded-xl text-slate-500 hover:text-primary-600 transition-all">
-                           <ChevronRight size={20} />
-                        </button>
-                     </div>
-                  </div>
-
                   <div className="flex items-center gap-4">
-                     <div className="hidden xl:flex items-center gap-2 px-5 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm">
-                        <RefreshCcw size={14} className="text-emerald-500 animate-spin-slow" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Working:</span>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">{doctorProfile?.availability?.timings || 'Not Set'}</span>
+                     <div className="h-14 w-14 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-600/20">
+                        <CalIcon className="h-7 w-7 text-white" />
                      </div>
-                     <div className="h-12 w-px bg-slate-100 mx-2" />
-                     <div className="flex bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
-                        {['all', 'online', 'clinic'].map(f => (
-                           <button 
-                              key={f}
-                              onClick={() => setTypeFilter(f)}
-                              className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${typeFilter === f ? 'bg-white text-primary-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-                           >
-                              {f}
-                           </button>
-                        ))}
+                     <div>
+                        <h1 className="text-4xl font-black text-slate-900 tracking-tight leading-tight">My Schedule</h1>
+                        <div className="flex items-center gap-2 mt-2">
+                           <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Clinical Agenda</span>
+                           <span className="h-1 w-1 rounded-full bg-slate-300" />
+                           <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-600">
+                              {weekDays[0].toLocaleDateString('default', { month: 'long', year: 'numeric' })}
+                           </span>
+                        </div>
                      </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 px-6 py-3.5 bg-emerald-50/30 border border-emerald-100 rounded-xl">
+                     <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Working:</span>
+                     <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">{doctorProfile?.availability?.timings || 'Not Set'}</span>
                   </div>
                </div>
-            </header>
-
-            {/* MAIN CALENDAR SURFACE */}
-            <div className="flex-1 overflow-auto bg-white relative custom-scrollbar snap-y" ref={scrollRef}>
+            </header>            
+            
+            {/* DUAL-COLUMN ENTERPRISE LAYOUT (GUARANTEED PERSISTENCE) */}
+            <div className="flex-1 flex overflow-hidden bg-white">
                
-               {/* STICKY DAY HEADERS */}
-               <div className="sticky top-0 z-40 flex bg-white/95 backdrop-blur-xl border-b border-slate-100/50">
-                  <div className="w-24 shrink-0 bg-transparent flex flex-col items-center justify-center border-r border-slate-100/50">
-                     <Clock size={16} className="text-slate-300" />
+               {/* FIXED LEFT DATE AXIS (NOT SCROLLABLE HORIZONTALLY) */}
+               <div className="w-32 shrink-0 flex flex-col border-r border-slate-200 bg-white z-40">
+                  {/* Corner Header */}
+                  <div className="h-12 shrink-0 border-b border-slate-200 bg-[#f5f5f5] flex items-center justify-center sticky top-0 z-50">
+                     <Clock size={14} className="text-slate-400" />
                   </div>
-                  {weekDays.map((day, idx) => {
-                     const isToday = isDateToday(day);
-                     return (
-                        <div key={idx} className={`flex-1 min-w-[160px] py-6 px-4 text-center transition-colors border-l border-slate-50 ${isToday ? 'bg-primary-50/20' : ''}`}>
-                           <div className={`text-[10px] font-black uppercase tracking-[0.25em] mb-2 ${isToday ? 'text-primary-600' : 'text-slate-400'}`}>
-                              {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                  
+                  {/* Day Label Rows */}
+                  <div className="flex-1">
+                     {weekDays.map((date, idx) => {
+                        const isToday = isDateToday(date);
+                        return (
+                           <div key={idx} className={`h-32 border-b border-slate-100 flex flex-col items-center justify-center transition-all ${isToday ? 'bg-emerald-50' : 'bg-white'}`}>
+                              <div className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${isToday ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                 {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                              </div>
+                              <div className={`text-xl font-bold ${isToday ? 'text-emerald-700' : 'text-slate-900'}`}>
+                                 {date.getDate()}
+                              </div>
+                              {isToday && <div className="mt-1 h-1 w-1 rounded-full bg-emerald-600" />}
                            </div>
-                           <div className="flex justify-center">
-                              <span className={`h-12 w-12 flex items-center justify-center text-2xl font-black rounded-2xl transition-all ${isToday ? 'bg-primary-600 text-white shadow-xl shadow-primary-200 ring-4 ring-primary-50' : 'text-slate-900 group-hover:bg-slate-50'}`}>
-                                 {day.getDate()}
-                              </span>
+                        );
+                     })}
+                  </div>
+               </div>
+
+               {/* HORIZONTALLY SCROLLABLE TIMELINE SURFACE */}
+               <div className="flex-1 overflow-x-auto overflow-y-auto custom-scrollbar relative bg-white" ref={scrollRef}>
+                  {/* Time Ruler (Sticky Top) */}
+                  <div className="sticky top-0 z-50 flex bg-[#f5f5f5] border-b border-slate-200 min-w-max h-12">
+                     {hours.map((hour) => (
+                        <div key={hour} className="shrink-0 border-l border-slate-200/60 relative" style={{ width: 280 }}>
+                           <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500">
+                              {hour % 12 === 0 ? '12' : hour % 12} {hour >= 12 ? 'PM' : 'AM'}
                            </div>
                         </div>
-                     );
-                  })}
-               </div>
+                     ))}
+                  </div>
 
-               {/* CALENDAR BODY */}
-               <div className="flex relative min-w-max">
-                  {/* TIME LABELS COLUMN */}
-                  <div className="w-24 shrink-0 sticky left-0 bg-white/80 backdrop-blur z-30 border-r border-slate-100">
-                     {hours.map((hour) => {
-                        const isWorking = hour >= WORK_START && hour < WORK_END;
+                  {/* Appointment Grid Surface */}
+                  <div className="min-w-max pb-20 relative">
+                     {weekDays.map((date, rowIdx) => {
+                        const isToday = isDateToday(date);
+                        const dayApts = appointments
+                           .filter(a => {
+                              if (!a.startTime) return false;
+                              if (typeFilter !== 'all' && a.type !== typeFilter) return false;
+                              if (getStatusBucket(a) !== statusFilter) return false;
+                              const d = new Date(a.startTime);
+                              return d.toDateString() === date.toDateString();
+                           })
+                           .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
                         return (
-                           <div key={hour} className="relative" style={{ height: HOUR_HEIGHT }}>
-                              <div className={`absolute -top-3 right-4 text-[10px] font-black tracking-widest ${isWorking ? 'text-slate-400' : 'text-slate-200'}`}>
-                                 {hour % 12 === 0 ? '12' : hour % 12} {hour >= 12 ? 'PM' : 'AM'}
+                           <div key={rowIdx} className={`flex h-32 border-b border-slate-100 relative group transition-all ${isToday ? 'bg-emerald-50/10' : 'bg-white hover:bg-slate-50/20'}`}>
+                              {/* CRISP GRID LINES */}
+                              <div className="absolute inset-0 flex pointer-events-none">
+                                 {hours.map((hour, idx) => (
+                                    <div key={idx} className="h-full border-l border-slate-100" style={{ width: 280 }} />
+                                 ))}
+                              </div>
+
+                              {/* THE 'NOW' INDICATOR (TEAMS STYLE RED LINE) */}
+                              {isToday && nowLinePos && (
+                                 <div className="absolute top-0 bottom-0 z-40 flex flex-col items-center pointer-events-none" style={{ left: ((now.getHours() - CALENDAR_START) * 60 + now.getMinutes()) / 60 * 280 }}>
+                                    <div className="h-2.5 w-2.5 rounded-full bg-[#d83b01] -mt-1.25" />
+                                    <div className="flex-1 w-[1.5px] bg-[#d83b01]" />
+                                 </div>
+                              )}
+
+                              {/* APPOINTMENT CARDS (EMERALD) */}
+                              <div className="relative h-full flex items-center w-full">
+                                 {dayApts.map(apt => {
+                                    const start = new Date(apt.startTime);
+                                    const duration = apt.duration || 30;
+                                    const left = ((start.getHours() - CALENDAR_START) * 60 + start.getMinutes()) / 60 * 280;
+                                    const width = (duration / 60) * 280;
+                                    const statusBucket = getStatusBucket(apt);
+                                    const isCancelled = statusBucket === 'cancelled';
+                                    const isOnline = apt.type === 'online';
+                                    const isFinished = statusBucket === 'finished';
+                                    
+                                    return (
+                                       <motion.div
+                                          key={apt._id}
+                                          initial={{ opacity: 0 }}
+                                          animate={{ opacity: 1 }}
+                                          className={`absolute rounded-md border-l-[4px] px-4 py-3 flex flex-col shadow-sm transition-all z-10 group/card cursor-pointer ${
+                                             isCancelled ? 'bg-rose-50 border-rose-500 text-rose-700' :
+                                             isFinished ? 'bg-slate-100 border-slate-400 text-slate-600' :
+                                             isOnline ? 'bg-emerald-50 border-emerald-500 text-emerald-700' :
+                                             'bg-teal-50 border-teal-600 text-teal-800'
+                                          }`}
+                                          style={{ left: left + 4, width: Math.max(240, width - 8), height: '85%' }}
+                                          onClick={() => openPatientChat(apt.patientId?._id || apt.patientId)}
+                                       >
+                                          <div className="flex items-center justify-between gap-3 mb-1">
+                                             <div className="text-[13px] font-bold truncate text-slate-900">{getPatientName(apt)}</div>
+                                             <div className="text-[10px] font-semibold opacity-70">
+                                                {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                             </div>
+                                          </div>
+                                          <div className="text-[11px] font-medium opacity-80 truncate">
+                                             {isOnline ? 'Virtual Session' : 'Clinic Consultation'}
+                                          </div>
+
+                                          <div className="mt-auto flex gap-2 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                                             <button className="text-[10px] font-bold hover:underline">Launch</button>
+                                             <button className="text-[10px] font-bold hover:underline">Patient Info</button>
+                                          </div>
+                                       </motion.div>
+                                    );
+                                 })}
                               </div>
                            </div>
                         );
                      })}
                   </div>
 
-                  {/* EVENT GRID */}
-                  <div className="flex-1 flex w-full relative">
-                     {/* HORIZONTAL GRID LINES & WORKING SHADES */}
-                     <div className="absolute inset-0 pointer-events-none">
-                        {hours.map((hour, idx) => {
-                           const isWorking = hour >= WORK_START && hour < WORK_END;
-                           return (
-                              <div key={idx} className={`border-b border-slate-50/50 w-full ${isWorking ? 'bg-transparent' : 'bg-slate-50/30'}`} style={{ height: HOUR_HEIGHT }} />
-                           );
-                        })}
-                        {/* THE 'NOW' INDICATOR */}
-                        {nowLinePos && (
-                           <div className="absolute left-0 right-0 z-20 flex items-center pointer-events-none" style={{ top: nowLinePos }}>
-                              <div className="h-3 w-3 rounded-full bg-rose-500 shadow-xl ring-4 ring-rose-100 ml-[-6px]" />
-                              <div className="flex-1 h-[2px] bg-gradient-to-r from-rose-500 via-rose-300 to-transparent" />
-                              <div className="mr-4 px-2 py-0.5 bg-rose-500 text-[8px] font-black text-white rounded-md shadow-lg">LIVE</div>
-                           </div>
-                        )}
+                  {loading && (
+                     <div className="absolute inset-0 bg-white/40 backdrop-blur-sm z-[100] flex items-center justify-center">
+                        <div className="flex flex-col items-center gap-4">
+                           <div className="h-14 w-14 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                           <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">Syncing Agenda...</span>
+                        </div>
                      </div>
-
-                     {/* DAY COLUMNS */}
-                     {weekDays.map((date, colIdx) => {
-                        const dayApts = appointments.filter(a => {
-                           if (!a.startTime || a.status === 'scheduled' || a.status === 'pending') return false; 
-                           if (typeFilter !== 'all' && a.type !== typeFilter) return false;
-                           const d = new Date(a.startTime);
-                           return d.toDateString() === date.toDateString();
-                        });
-
-                        return (
-                           <div key={colIdx} className="flex-1 min-w-[160px] relative border-l border-slate-50 group hover:bg-slate-50/20 transition-colors">
-                              {dayApts.map(apt => {
-                                 const start = new Date(apt.startTime);
-                                 const duration = apt.duration || 30;
-                                 const top = ((start.getHours() - CALENDAR_START) * 60 + start.getMinutes()) / 60 * HOUR_HEIGHT;
-                                 const height = (duration / 60) * HOUR_HEIGHT;
-                                 const isCancelled = apt.status === 'cancelled';
-                                 const isOnline = apt.type === 'online';
-                                 
-                                 return (
-                                    <motion.div
-                                       key={apt._id}
-                                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                                       className={`absolute left-2 right-2 rounded-[1.25rem] border border-l-[6px] p-4 flex flex-col shadow-sm transition-all z-10 group/card cursor-pointer overflow-hidden ${
-                                          isCancelled ? 'bg-rose-50/60 border-rose-100 border-l-rose-400 opacity-60 grayscale-[0.5]' :
-                                          isOnline ? 'bg-indigo-50 border-indigo-100 border-l-indigo-600 hover:shadow-xl hover:shadow-indigo-100/50 hover:-translate-y-1' :
-                                          'bg-emerald-50 border-emerald-100 border-l-emerald-600 hover:shadow-xl hover:shadow-emerald-100/50 hover:-translate-y-1'
-                                       }`}
-                                       style={{ top, height: Math.max(70, height - 4) }}
-                                    >
-                                       <div className="flex items-start justify-between gap-3 mb-auto">
-                                          <div className="min-w-0">
-                                             <div className={`text-xs font-black truncate ${isCancelled ? 'text-rose-900' : isOnline ? 'text-indigo-900' : 'text-emerald-900'}`}>{getPatientName(apt)}</div>
-                                             <div className="flex items-center gap-1.5 mt-1">
-                                                {isOnline ? <Video size={10} className="text-indigo-400" /> : <Building2 size={10} className="text-emerald-400" />}
-                                                <span className="text-[8px] font-black uppercase tracking-widest opacity-50">{apt.type}</span>
-                                             </div>
-                                          </div>
-                                          {!isCancelled && (
-                                             <div className="flex gap-1.5 opacity-0 group-hover/card:opacity-100 transition-opacity">
-                                                <button onClick={(e) => { e.stopPropagation(); openPatientChat(apt.patientId?._id || apt.patientId); }} className="h-8 w-8 rounded-xl bg-white/80 hover:bg-white flex items-center justify-center text-slate-600 shadow-sm border border-white"><MessageSquare size={14} /></button>
-                                                <button onClick={(e) => { e.stopPropagation(); handleDownloadPDF(apt); }} className="h-8 w-8 rounded-xl bg-white/80 hover:bg-white flex items-center justify-center text-slate-600 shadow-sm border border-white"><Download size={14} /></button>
-                                             </div>
-                                          )}
-                                       </div>
-                                       
-                                       <div className="flex items-center justify-between mt-2">
-                                          <div className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isCancelled ? 'bg-rose-100 text-rose-600' : isOnline ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                                             {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                          </div>
-                                          {isCancelled && <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest">Cancelled</span>}
-                                       </div>
-                                    </motion.div>
-                                 );
-                              })}
-                           </div>
-                        );
-                     })}
-                  </div>
+                  )}
                </div>
-
-               {loading && (
-                  <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-[100] flex items-center justify-center">
-                     <div className="flex flex-col items-center gap-4">
-                        <div className="h-12 w-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Syncing Agenda...</span>
-                     </div>
-                  </div>
-               )}
             </div>
          </main>
       </div>
@@ -359,3 +379,4 @@ const MySchedule = () => {
 };
 
 export default MySchedule;
+

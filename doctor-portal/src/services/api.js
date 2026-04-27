@@ -231,6 +231,89 @@ export const doctorService = {
     }
   },
 
+  getAppointmentById: async (appointmentId) => {
+    const token = localStorage.getItem('token');
+    try {
+      const response = await fetch(`${API_URL}/doctor/appointments/${appointmentId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('Failed to load appointment');
+      return await response.json();
+    } catch (err) {
+      return null;
+    }
+  },
+
+  startConsultation: async (appointmentId) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/doctor/consultation/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ appointmentId }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to start consultation');
+    return data;
+  },
+
+  endConsultation: async (appointmentId) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/doctor/consultation/end`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ appointmentId }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to end consultation');
+    return data;
+  },
+
+  getPrescriptionByAppointment: async (appointmentId) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/doctor/prescription/${appointmentId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to load prescription');
+    return data;
+  },
+
+  savePrescriptionDraft: async ({ appointmentId, notes, medicines }) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/doctor/prescription/draft`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ appointmentId, notes, medicines }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to save draft');
+    return data;
+  },
+
+  finalizePrescription: async ({ appointmentId, notes, medicines }) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/doctor/prescription/finalize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ appointmentId, notes, medicines }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to finalize prescription');
+    return data;
+  },
+
   // Upload Profile Image
   uploadProfileImage: async (file) => {
     const token = localStorage.getItem('token');

@@ -1,12 +1,30 @@
 import React, { useState } from 'react';
 import { Calendar, Clock, MapPin, User, ArrowRight, Video, Stethoscope, ChevronRight, Activity, X, ExternalLink, Navigation, Loader2, Trash2, Eye, MessageSquare } from 'lucide-react';
+import { patientApi } from '../../services/api';
 
 const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false }) => {
    const [loading, setLoading] = useState(false);
    const [showSessionInfo, setShowSessionInfo] = useState(false);
-   const isConfirmed = (appointment.status || "").toLowerCase() === 'confirmed';
-   const isPending = (appointment.status || "").toLowerCase() === 'pending';
-   const isCancelled = (appointment.status || "").toLowerCase() === 'cancelled';
+   const [showPrescription, setShowPrescription] = useState(false);
+   const [prescriptionLoading, setPrescriptionLoading] = useState(false);
+   const [prescriptionData, setPrescriptionData] = useState(null);
+   const consultationCompleted = !!appointment.consultationCompleted;
+
+   const normalizeStatus = (status) => String(status || '').toLowerCase().trim();
+   const getDerivedStatus = () => {
+      const status = normalizeStatus(appointment.status);
+      if (status === 'cancelled' || status === 'canceled') return 'cancelled';
+      if (status === 'finished' || status === 'completed' || consultationCompleted) return 'finished';
+      if (status === 'pending' || status === 'scheduled') return 'pending';
+      if (status === 'confirmed') return 'confirmed';
+      return status || 'pending';
+   };
+
+   const derivedStatus = getDerivedStatus();
+   const isConfirmed = derivedStatus === 'confirmed';
+   const isPending = derivedStatus === 'pending';
+   const isCancelled = derivedStatus === 'cancelled';
+   const isFinished = derivedStatus === 'finished';
 
    const formatTime = (date) => {
       if (!date) return null;
@@ -21,12 +39,28 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
    // Robust type detection based on model
    const type = (appointment.type || appointment.appointmentType || 'online').toLowerCase();
    const isOnline = type === 'online';
+   const meetingStatus = String(appointment.meetingStatus || 'scheduled').toLowerCase();
+   const canJoinLive = isOnline && meetingStatus === 'live' && !!appointment.meetingLink;
    const displayType = isOnline ? 'Virtual Session' : (type === 'clinic' ? 'Clinical Visit' : 'Follow-up');
 
    const clinicInfo = appointment.doctorId?.clinicInfo || {};
    const fullAddress = [clinicInfo.address, clinicInfo.city, clinicInfo.state, clinicInfo.pincode].filter(Boolean).join(', ');
    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clinicInfo.clinicName + ' ' + fullAddress)}`;
    const meetingLink = appointment.meetingLink || '#';
+
+   const openPrescription = async () => {
+      if (!appointment?._id) return;
+      setPrescriptionLoading(true);
+      try {
+         const res = await patientApi.getPrescription(appointment._id);
+         setPrescriptionData(res.data);
+         setShowPrescription(true);
+      } catch (err) {
+         alert(err?.response?.data?.message || 'Prescription is not available yet.');
+      } finally {
+         setPrescriptionLoading(false);
+      }
+   };
 
    if (isListView) {
       return (
@@ -69,10 +103,15 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
 
             {/* Status badge */}
             <div className="flex-shrink-0 relative z-10">
-               <span className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide flex items-center gap-2 ${isConfirmed ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : isPending ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-slate-50 text-slate-400 border border-slate-200'}`}>
-                  <div className={`w-2 h-2 rounded-full ${isConfirmed ? 'bg-emerald-500 animate-pulse' : isPending ? 'bg-amber-500' : 'bg-slate-300'}`}></div>
-                  {appointment.status || 'Scheduled'}
+               <span className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide flex items-center gap-2 ${isConfirmed ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : isPending ? 'bg-amber-50 text-amber-600 border border-amber-200' : isCancelled ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-slate-50 text-slate-500 border border-slate-200'}`}>
+                  <div className={`w-2 h-2 rounded-full ${isConfirmed ? 'bg-emerald-500 animate-pulse' : isPending ? 'bg-amber-500' : isCancelled ? 'bg-rose-500' : 'bg-slate-400'}`}></div>
+                  {derivedStatus}
                </span>
+               {consultationCompleted && (
+                 <div className="mt-2 text-[10px] font-black uppercase tracking-wide text-emerald-600 text-center">
+                   Consultation Completed
+                 </div>
+               )}
             </div>
 
             {/* Action buttons */}
@@ -109,10 +148,21 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
                >
                   <ChevronRight size={16} strokeWidth={2.5} />
                </button>
+               {consultationCompleted && (
+                 <button
+                    onClick={openPrescription}
+                    disabled={prescriptionLoading}
+                    className="p-2.5 bg-white border border-emerald-200 text-emerald-700 rounded-xl hover:bg-emerald-50 transition-all duration-300 disabled:opacity-60"
+                    title="View prescription"
+                 >
+                    {prescriptionLoading ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} strokeWidth={2.5} />}
+                 </button>
+               )}
             </div>
 
             {showSessionInfo && (
-               <div className="absolute inset-0 z-50 bg-white rounded-2xl border border-slate-200 flex flex-col shadow-2xl p-8 overflow-y-auto">
+               <div className="fixed inset-0 z-[120] bg-black/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+                  <div className="relative w-full max-w-3xl max-h-[88vh] bg-white rounded-2xl border border-slate-200 flex flex-col shadow-2xl p-8 overflow-y-auto">
                   <button onClick={() => setShowSessionInfo(false)} className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-lg transition-all">
                      <X size={20} className="text-slate-400" />
                   </button>
@@ -168,16 +218,16 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
 
                      {/* Status Badge */}
                      <div className="flex items-center gap-3 px-5 py-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <div className={`w-3 h-3 rounded-full ${isConfirmed ? 'bg-emerald-500 animate-pulse' : isPending ? 'bg-amber-500' : 'bg-slate-400'}`}></div>
-                        <span className={`font-bold uppercase tracking-wide text-sm ${isConfirmed ? 'text-emerald-600' : isPending ? 'text-amber-600' : 'text-slate-600'}`}>
-                           {appointment.status === 'confirmed' ? 'Confirmed - Ready to proceed' : appointment.status === 'pending' ? 'Pending - Awaiting confirmation' : 'Scheduled'}
+                        <div className={`w-3 h-3 rounded-full ${isConfirmed ? 'bg-emerald-500 animate-pulse' : isPending ? 'bg-amber-500' : isCancelled ? 'bg-rose-500' : 'bg-slate-400'}`}></div>
+                        <span className={`font-bold uppercase tracking-wide text-sm ${isConfirmed ? 'text-emerald-600' : isPending ? 'text-amber-600' : isCancelled ? 'text-rose-600' : 'text-slate-600'}`}>
+                           {isConfirmed ? 'Confirmed - Ready to proceed' : isPending ? 'Pending - Awaiting confirmation' : isCancelled ? 'Cancelled' : isFinished ? 'Finished' : 'Scheduled'}
                         </span>
                      </div>
 
                      {isOnline ? (
                         /* Virtual Session Info */
                         <div className="space-y-4">
-                           {appointment.meetingLink ? (
+                           {canJoinLive ? (
                               <>
                                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
                                     <p className="text-xs font-bold uppercase text-blue-600 tracking-wide mb-3">Meeting Link</p>
@@ -193,7 +243,7 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
                               </>
                            ) : (
                               <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-center">
-                                 <p className="text-sm font-bold text-amber-600">Meeting link will be shared by the doctor before your scheduled time.</p>
+                                 <p className="text-sm font-bold text-amber-600">Waiting for doctor to start the consultation.</p>
                               </div>
                            )}
                         </div>
@@ -220,17 +270,63 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
                         </div>
                      )}
 
-                     <button
-                        onClick={() => onMessage?.(appointment)}
-                        className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-lg shadow-slate-900/20 active:scale-95"
-                     >
-                        <MessageSquare size={18} strokeWidth={2.5} />
-                        <span>Open Doctor Chat</span>
-                     </button>
+                  <button
+                     onClick={() => onMessage?.(appointment)}
+                     className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-lg shadow-slate-900/20 active:scale-95"
+                  >
+                     <MessageSquare size={18} strokeWidth={2.5} />
+                     <span>Open Doctor Chat</span>
+                  </button>
 
-                     {/* Footer Note */}
-                     <p className="text-xs font-medium text-slate-500 text-center">Click the X button or outside to close</p>
+                  {consultationCompleted && (
+                    <button
+                       onClick={openPrescription}
+                       className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20 active:scale-95"
+                    >
+                       <Eye size={18} strokeWidth={2.5} />
+                       <span>View Prescription</span>
+                    </button>
+                  )}
+
+                  {/* Footer Note */}
+                  <p className="text-xs font-medium text-slate-500 text-center">Click the X button or outside to close</p>
                   </div>
+                  </div>
+               </div>
+            )}
+
+            {showPrescription && prescriptionData?.prescription && (
+               <div className="fixed inset-0 z-[130] bg-black/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+                 <div className="relative w-full max-w-2xl max-h-[88vh] bg-white rounded-2xl border border-slate-200 p-6 overflow-y-auto">
+                   <button onClick={() => setShowPrescription(false)} className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-lg transition-all">
+                      <X size={18} className="text-slate-400" />
+                   </button>
+                   <div className="space-y-4">
+                      <div>
+                         <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Prescription</p>
+                         <h3 className="text-xl font-black text-slate-900 mt-1">Consultation Notes</h3>
+                         <p className="text-xs text-slate-500 mt-1">
+                            Consulted on: {prescriptionData.consultedAt ? new Date(prescriptionData.consultedAt).toLocaleString() : 'N/A'}
+                         </p>
+                      </div>
+                      <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 whitespace-pre-wrap">
+                         {prescriptionData.prescription.notes || 'No additional notes.'}
+                      </div>
+                      <div className="space-y-2">
+                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Medicines</p>
+                         {Array.isArray(prescriptionData.prescription.medicines) && prescriptionData.prescription.medicines.length > 0 ? (
+                            prescriptionData.prescription.medicines.map((med, idx) => (
+                               <div key={`${med.name}-${idx}`} className="p-3 rounded-xl border border-slate-200">
+                                  <p className="text-sm font-bold text-slate-900">{med.name || 'Medicine'}</p>
+                                  <p className="text-xs text-slate-600 mt-1">{med.details || 'No details provided.'}</p>
+                               </div>
+                            ))
+                         ) : (
+                            <div className="p-3 rounded-xl border border-slate-200 text-xs text-slate-500">No medicines listed.</div>
+                         )}
+                      </div>
+                   </div>
+                 </div>
                </div>
             )}
          </div>
@@ -276,8 +372,8 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
             <div className="space-y-1 mb-6">
                <div className="flex items-center justify-center gap-2">
                   <h3 className="text-2xl font-bold text-slate-900 tracking-tight leading-none">{doctorName}</h3>
-                  <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-[2px] ${isConfirmed ? 'bg-emerald-50 text-emerald-600' : isPending ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
-                     {appointment.status || 'Scheduled'}
+                  <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-[2px] ${isConfirmed ? 'bg-emerald-50 text-emerald-600' : isPending ? 'bg-amber-50 text-amber-600' : isCancelled ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-500'}`}>
+                     {derivedStatus}
                   </span>
                </div>
                <span className="text-[10px] font-bold uppercase text-slate-600 tracking-[2px] block">{specialty}</span>
@@ -322,7 +418,8 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
 
          {/* Session Access Overlay */}
          {showSessionInfo && (
-            <div className="absolute inset-0 z-50 bg-white p-8 rounded-[40px] border border-slate-200 flex flex-col justify-center animate-in slide-in-from-bottom-full duration-500 shadow-2xl">
+            <div className="fixed inset-0 z-[120] bg-black/35 backdrop-blur-[1px] p-4 flex items-center justify-center">
+               <div className="relative w-full max-w-2xl max-h-[88vh] bg-white p-8 rounded-[40px] border border-slate-200 flex flex-col justify-center animate-in slide-in-from-bottom-full duration-500 shadow-2xl overflow-y-auto">
                <button onClick={() => setShowSessionInfo(false)} className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-lg transition-all">
                   <X size={20} className="text-slate-400" />
                </button>
@@ -340,7 +437,7 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
 
                   {isOnline ? (
                      <div className="space-y-4">
-                        {appointment.meetingLink ? (
+                        {canJoinLive ? (
                            <a
                               href={meetingLink}
                               target="_blank"
@@ -352,13 +449,13 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
                            </a>
                         ) : (
                            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                              <p className="text-xs font-bold uppercase tracking-wide text-amber-600 text-center">Awaiting session link...</p>
+                              <p className="text-xs font-bold uppercase tracking-wide text-amber-600 text-center">Doctor has not started this session yet</p>
                            </div>
                         )}
                         <button
-                           disabled={!appointment.meetingLink}
+                           disabled={!canJoinLive}
                            onClick={() => window.open(meetingLink, '_blank')}
-                           className={`w-full py-3 rounded-lg font-bold tracking-tight text-sm flex items-center justify-center gap-2 transition-all ${appointment.meetingLink
+                           className={`w-full py-3 rounded-lg font-bold tracking-tight text-sm flex items-center justify-center gap-2 transition-all ${canJoinLive
                               ? 'bg-slate-900 text-white hover:bg-black shadow-lg shadow-slate-900/20'
                               : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                            }`}
@@ -385,14 +482,60 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
                      </div>
                   )}
 
-                  <button
-                     onClick={() => onMessage?.(appointment)}
-                     className="w-full py-3 bg-slate-900 text-white rounded-lg font-bold tracking-tight text-sm flex items-center justify-center gap-2 hover:bg-black active:scale-95 transition-all shadow-lg shadow-slate-900/20"
-                  >
-                     <MessageSquare size={16} strokeWidth={2.5} />
-                     <span>Open Doctor Chat</span>
+               <button
+                  onClick={() => onMessage?.(appointment)}
+                  className="w-full py-3 bg-slate-900 text-white rounded-lg font-bold tracking-tight text-sm flex items-center justify-center gap-2 hover:bg-black active:scale-95 transition-all shadow-lg shadow-slate-900/20"
+               >
+                  <MessageSquare size={16} strokeWidth={2.5} />
+                  <span>Open Doctor Chat</span>
+               </button>
+
+               {consultationCompleted && (
+                 <button
+                    onClick={openPrescription}
+                    className="w-full py-3 bg-emerald-600 text-white rounded-lg font-bold tracking-tight text-sm flex items-center justify-center gap-2 hover:bg-emerald-700 active:scale-95 transition-all shadow-lg shadow-emerald-600/20"
+                 >
+                    <Eye size={16} strokeWidth={2.5} />
+                    <span>View Prescription</span>
                   </button>
+               )}
+             </div>
+             </div>
+           </div>
+         )}
+
+         {showPrescription && prescriptionData?.prescription && (
+            <div className="fixed inset-0 z-[130] bg-black/35 backdrop-blur-[1px] flex items-center justify-center p-4">
+              <div className="relative w-full max-w-2xl max-h-[88vh] bg-white rounded-[40px] border border-slate-200 p-6 overflow-y-auto">
+               <button onClick={() => setShowPrescription(false)} className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-lg transition-all">
+                  <X size={18} className="text-slate-400" />
+               </button>
+               <div className="space-y-4">
+                  <div>
+                     <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Prescription</p>
+                     <h3 className="text-xl font-black text-slate-900 mt-1">Consultation Notes</h3>
+                     <p className="text-xs text-slate-500 mt-1">
+                        Consulted on: {prescriptionData.consultedAt ? new Date(prescriptionData.consultedAt).toLocaleString() : 'N/A'}
+                     </p>
+                  </div>
+                  <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 whitespace-pre-wrap">
+                     {prescriptionData.prescription.notes || 'No additional notes.'}
+                  </div>
+                  <div className="space-y-2">
+                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Medicines</p>
+                     {Array.isArray(prescriptionData.prescription.medicines) && prescriptionData.prescription.medicines.length > 0 ? (
+                        prescriptionData.prescription.medicines.map((med, idx) => (
+                           <div key={`${med.name}-${idx}`} className="p-3 rounded-xl border border-slate-200">
+                              <p className="text-sm font-bold text-slate-900">{med.name || 'Medicine'}</p>
+                              <p className="text-xs text-slate-600 mt-1">{med.details || 'No details provided.'}</p>
+                           </div>
+                        ))
+                     ) : (
+                        <div className="p-3 rounded-xl border border-slate-200 text-xs text-slate-500">No medicines listed.</div>
+                     )}
+                  </div>
                </div>
+              </div>
             </div>
          )}
       </div>

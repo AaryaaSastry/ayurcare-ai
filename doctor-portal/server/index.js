@@ -7,12 +7,14 @@ const { Server } = require('socket.io');
 const path = require('path');
 const multer = require('multer');
 const fs = require('fs');
+const { randomBytes } = require('crypto');
 require('dotenv').config();
 
 const User = require('./models/User');
 const Doctor = require('./models/Doctor');
 const Appointment = require('./models/Appointment');
 const Report = require('./models/Report');
+const Prescription = require('./models/Prescription');
 const chatRoutes = require('./routes/chatRoutes');
 const { registerChatSocket } = require('./sockets/chatSocket');
 
@@ -125,6 +127,26 @@ const authenticateToken = (req, res, next) => {
 
   verifyToken();
 };
+
+const normalizeMedicineRows = (rows) => {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const name = String(item.name || '').trim();
+      const details = String(item.details || '').trim();
+      if (!name && !details) return null;
+      return { name, details };
+    })
+    .filter(Boolean);
+};
+
+const buildJitsiRoom = (appointmentId) => {
+  const token = randomBytes(4).toString('hex');
+  return `appt-${appointmentId}-${token}`.toLowerCase();
+};
+
+const buildJitsiLink = (roomId) => `https://meet.jit.si/${encodeURIComponent(roomId)}#config.prejoinPageEnabled=false`;
 
 // ─── HEALTH CHECK (No auth required) ───
 app.get('/api/health', (req, res) => {
@@ -255,7 +277,15 @@ app.get('/api/patient/appointments', authenticateToken, async (req, res) => {
       patientId: req.userId, 
       hiddenByPatient: { $ne: true } 
     }).populate('doctorId').sort({ createdAt: -1 });
-    res.json(appointments);
+    const safeAppointments = appointments.map((appointmentDoc) => {
+      const appointment = appointmentDoc.toObject();
+      const status = String(appointment.meetingStatus || 'scheduled').toLowerCase();
+      if (status !== 'live') {
+        appointment.meetingLink = null;
+      }
+      return appointment;
+    });
+    res.json(safeAppointments);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -389,9 +419,241 @@ app.get('/api/doctor/appointments', authenticateToken, async (req, res) => {
     const doctor = await Doctor.findOne({ userId: req.userId });
     if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
     const appointments = await Appointment.find({ doctorId: doctor._id })
-      .populate('patientId', 'name email')
+      .populate('patientId', 'name email profileImage')
+      .populate('prescriptionId')
       .sort({ createdAt: -1 });
     res.json(appointments);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.get('/api/doctor/appointments/:id', authenticateToken, async (req, res) => {
+  try {
+    const doctor = await Doctor.findOne({ userId: req.userId }).select('_id');
+    if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
+
+    const appointment = await Appointment.findOne({ _id: req.params.id, doctorId: doctor._id })
+      .populate('patientId', 'name email profileImage')
+      .populate('prescriptionId');
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+
+    res.json(appointment);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/doctor/consultation/start', authenticateToken, async (req, res) => {
+  try {
+    const { appointmentId } = req.body;
+    if (!appointmentId) return res.status(400).json({ message: 'appointmentId is required' });
+
+    const doctor = await Doctor.findOne({ userId: req.userId }).select('_id');
+    if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
+
+    const appointment = await Appointment.findOne({ _id: appointmentId, doctorId: doctor._id });
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+    if (String(appointment.status || '').toLowerCase() !== 'confirmed') {
+      return res.status(409).json({ message: 'Only confirmed appointments can start consultation' });
+    }
+    if (String(appointment.type || '').toLowerCase() !== 'online') {
+      return res.status(409).json({ message: 'Consultation workspace is only available for online appointments' });
+    }
+
+    if (!appointment.roomId) {
+      appointment.roomId = buildJitsiRoom(appointment._id.toString());
+    }
+    appointment.meetingType = 'jitsi';
+    appointment.meetingLink = buildJitsiLink(appointment.roomId);
+    appointment.meetingStatus = 'live';
+    appointment.startedAt = appointment.startedAt || new Date();
+    appointment.endedAt = undefined;
+    appointment.updatedAt = new Date();
+    await appointment.save();
+
+    res.json({
+      success: true,
+      appointment,
+      meetingLink: appointment.meetingLink,
+      roomId: appointment.roomId,
+      meetingStatus: appointment.meetingStatus,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/doctor/consultation/end', authenticateToken, async (req, res) => {
+  try {
+    const { appointmentId } = req.body;
+    if (!appointmentId) return res.status(400).json({ message: 'appointmentId is required' });
+
+    const doctor = await Doctor.findOne({ userId: req.userId }).select('_id');
+    if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
+
+    const appointment = await Appointment.findOne({ _id: appointmentId, doctorId: doctor._id });
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+
+    appointment.meetingStatus = 'ended';
+    appointment.endedAt = new Date();
+    appointment.updatedAt = new Date();
+    await appointment.save();
+
+    res.json({ success: true, appointment });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.get('/api/doctor/prescription/:appointmentId', authenticateToken, async (req, res) => {
+  try {
+    const doctor = await Doctor.findOne({ userId: req.userId }).select('_id');
+    if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
+
+    const appointment = await Appointment.findOne({
+      _id: req.params.appointmentId,
+      doctorId: doctor._id
+    }).select('_id doctorId patientId meetingStatus consultationCompleted');
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+
+    const prescription = await Prescription.findOne({ appointmentId: appointment._id });
+    if (!prescription) {
+      return res.json({
+        appointmentId: appointment._id,
+        doctorId: appointment.doctorId,
+        patientId: appointment.patientId,
+        notes: '',
+        medicines: [],
+        status: 'draft',
+        meetingStatus: appointment.meetingStatus || 'scheduled',
+        consultationCompleted: !!appointment.consultationCompleted,
+        createdAt: null,
+        updatedAt: null,
+        finalizedAt: null,
+      });
+    }
+
+    res.json({
+      ...prescription.toObject(),
+      meetingStatus: appointment.meetingStatus || 'scheduled',
+      consultationCompleted: !!appointment.consultationCompleted,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/doctor/prescription/draft', authenticateToken, async (req, res) => {
+  try {
+    const { appointmentId, notes = '', medicines = [] } = req.body;
+    if (!appointmentId) return res.status(400).json({ message: 'appointmentId is required' });
+
+    const doctor = await Doctor.findOne({ userId: req.userId }).select('_id');
+    if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
+
+    const appointment = await Appointment.findOne({
+      _id: appointmentId,
+      doctorId: doctor._id
+    }).select('_id doctorId patientId meetingStatus consultationCompleted');
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+
+    const draft = await Prescription.findOneAndUpdate(
+      { appointmentId: appointment._id },
+      {
+        $set: {
+          doctorId: appointment.doctorId,
+          patientId: appointment.patientId,
+          notes: String(notes || ''),
+          medicines: normalizeMedicineRows(medicines),
+          status: 'draft',
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          appointmentId: appointment._id,
+          createdAt: new Date(),
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json(draft);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/doctor/prescription/finalize', authenticateToken, async (req, res) => {
+  try {
+    const { appointmentId, notes = '', medicines = [] } = req.body;
+    if (!appointmentId) return res.status(400).json({ message: 'appointmentId is required' });
+
+    const doctor = await Doctor.findOne({ userId: req.userId }).select('_id');
+    if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
+
+    const appointment = await Appointment.findOne({
+      _id: appointmentId,
+      doctorId: doctor._id
+    });
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+
+    if ((appointment.meetingStatus || 'scheduled') === 'scheduled') {
+      return res.status(409).json({ message: 'Consultation has not started yet' });
+    }
+
+    const finalizedAt = new Date();
+    const prescription = await Prescription.findOneAndUpdate(
+      { appointmentId: appointment._id },
+      {
+        $set: {
+          doctorId: appointment.doctorId,
+          patientId: appointment.patientId,
+          notes: String(notes || ''),
+          medicines: normalizeMedicineRows(medicines),
+          status: 'finalized',
+          finalizedAt,
+          updatedAt: finalizedAt,
+        },
+        $setOnInsert: {
+          appointmentId: appointment._id,
+          createdAt: finalizedAt,
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    appointment.prescriptionId = prescription._id;
+    appointment.consultationCompleted = true;
+    appointment.meetingStatus = 'ended';
+    appointment.endedAt = finalizedAt;
+    appointment.updatedAt = finalizedAt;
+    await appointment.save();
+
+    res.json({ success: true, prescription, appointment });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.get('/api/patient/prescription/:appointmentId', authenticateToken, async (req, res) => {
+  try {
+    const appointment = await Appointment.findOne({
+      _id: req.params.appointmentId,
+      patientId: req.userId
+    }).populate('prescriptionId');
+
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+    if (!appointment.prescriptionId) return res.status(404).json({ message: 'Prescription not available yet' });
+    if (appointment.prescriptionId.status !== 'finalized') {
+      return res.status(403).json({ message: 'Prescription is still in draft mode' });
+    }
+
+    res.json({
+      appointmentId: appointment._id,
+      consultationCompleted: !!appointment.consultationCompleted,
+      consultedAt: appointment.endedAt || appointment.updatedAt,
+      prescription: appointment.prescriptionId
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

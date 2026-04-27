@@ -18,7 +18,18 @@ const appointmentSchema = new mongoose.Schema({
   duration: { type: Number, default: 30 }, // in minutes
   notes: { type: String },
   fee: { type: Number },
+  meetingType: { type: String, enum: ['google_meet', 'jitsi', 'custom'], default: 'custom' },
+  roomId: { type: String },
   meetingLink: { type: String },
+  meetingStatus: {
+    type: String,
+    enum: ['scheduled', 'live', 'ended'],
+    default: 'scheduled'
+  },
+  startedAt: { type: Date },
+  endedAt: { type: Date },
+  consultationCompleted: { type: Boolean, default: false },
+  prescriptionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Prescription' },
   sessionData: {
     diagnosis: String,
     title: String,

@@ -11,7 +11,8 @@ import {
   Info,
   X,
   Video,
-  Building2
+  Building2,
+  SlidersHorizontal
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -54,6 +55,7 @@ const Registry = () => {
   const [modeFilter, setModeFilter] = useState('all');
   const [apptTypeFilter, setApptTypeFilter] = useState('all');
   const [selectedAudit, setSelectedAudit] = useState(null);
+  const now = new Date();
 
    const fetchData = async () => {
      try {
@@ -80,6 +82,27 @@ const Registry = () => {
     return cleanId && cleanId.length > 4 ? `User #${cleanId.slice(-4)}` : "User";
   };
 
+  const normalizeStatus = (status) => String(status || '').toLowerCase().trim();
+
+  const getAppointmentEndTime = (apt) => {
+    if (!apt?.startTime) return null;
+    const start = new Date(apt.startTime);
+    const duration = Number(apt.duration) || 30;
+    return apt.endTime ? new Date(apt.endTime) : new Date(start.getTime() + duration * 60000);
+  };
+
+  const getStatusBucket = (apt) => {
+    const status = normalizeStatus(apt?.status);
+    if (status === 'cancelled' || status === 'canceled') return 'cancelled';
+    if (status === 'finished' || status === 'completed') return 'finished';
+    if (status === 'pending' || status === 'scheduled') return 'pending';
+    if (status === 'confirmed') {
+      const end = getAppointmentEndTime(apt);
+      return end && end <= now ? 'finished' : 'confirmed';
+    }
+    return status || 'pending';
+  };
+
   const handleDownload = (apt) => {
     const diagnosisData = apt.sessionData?.diagnosis;
     if (!diagnosisData) {
@@ -98,7 +121,7 @@ const Registry = () => {
 
   const filteredAppointments = appointments.filter(apt => {
     const nameMatch = getPatientName(apt).toLowerCase().includes(searchTerm.toLowerCase());
-    const statusMatch = statusFilter === 'all' || apt.status === statusFilter;
+    const statusMatch = getStatusBucket(apt) === statusFilter;
     
     // Date Range Filter
     let dateMatch = true;
@@ -129,259 +152,310 @@ const Registry = () => {
     }
 
     return nameMatch && statusMatch && dateMatch && modeMatch && typeMatch;
+  }).sort((a, b) => {
+    const aStart = a.startTime ? new Date(a.startTime) : new Date(a.createdAt || 0);
+    const bStart = b.startTime ? new Date(b.startTime) : new Date(b.createdAt || 0);
+    if (statusFilter !== 'confirmed') return bStart - aStart;
+    const aUpcoming = aStart >= now ? 1 : 0;
+    const bUpcoming = bStart >= now ? 1 : 0;
+    if (aUpcoming !== bUpcoming) return bUpcoming - aUpcoming;
+    return aStart - bStart;
   });
+
+  const statusCounts = {
+    confirmed: appointments.filter(a => getStatusBucket(a) === 'confirmed').length,
+    pending: appointments.filter(a => getStatusBucket(a) === 'pending').length,
+    cancelled: appointments.filter(a => getStatusBucket(a) === 'cancelled').length,
+    finished: appointments.filter(a => getStatusBucket(a) === 'finished').length,
+  };
 
   return (
     <div className="min-h-screen w-full bg-[#f8fafc] flex">
       <Sidebar />
 
-      <main className="flex-1 ml-72 p-10 max-w-[1600px]">
-        <header className="mb-12">
-          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-5">
-            <div className="h-16 w-16 bg-white border border-slate-100 rounded-[2rem] flex items-center justify-center text-primary-600 shadow-xl shadow-primary-500/10">
-              <History className="h-8 w-8 text-primary-600" />
+      <main className="flex-1 ml-72 p-12 max-w-[1600px]">
+        <header className="mb-8 flex items-center justify-between">
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4">
+            <div className="h-12 w-12 bg-primary-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-primary-600/20">
+              <History className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-4xl font-black text-slate-900 tracking-tight">
-                Clinical <span className="text-primary-600">Registry</span>
-              </h1>
-              <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Unified historical audit of all patient consultations</p>
+              <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Clinical Registry</h1>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-2">Unified Historical Audit Trail</p>
             </div>
           </motion.div>
         </header>
 
-        {/* TOOLBAR */}
-        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col gap-6 mb-10">
-          <div className="flex flex-col lg:flex-row gap-6">
-            <div className="flex-1 relative group">
-              <Search className="absolute left-6 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-300 group-focus-within:text-primary-500 transition-colors" />
-              <input
-                type="text"
-                placeholder="Search patient name, email or ID..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-slate-50/50 border border-slate-200 rounded-3xl py-4 pl-16 pr-8 text-sm font-bold focus:border-primary-500/30 focus:bg-white outline-none transition-all shadow-inner"
-              />
-            </div>
-            <div className="flex bg-slate-100 p-1.5 rounded-[1.5rem] border border-slate-200 overflow-x-auto">
-              {['confirmed', 'pending', 'cancelled', 'all'].map(f => (
-                <button
-                  key={f}
-                  onClick={() => setStatusFilter(f)}
-                  className={`px-8 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${statusFilter === f ? 'bg-white text-primary-600 shadow-md border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  {f === 'all' ? 'All Status' : f}
-                </button>
-              ))}
-            </div>
+        {/* ENHANCED COMMAND CENTER - LARGER PRESENCE */}
+        <div className="bg-white p-3 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 mb-12 flex items-center gap-6">
+          {/* Integrated Search */}
+          <div className="relative group w-80">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 group-focus-within:text-primary-500 transition-colors" />
+            <input
+              type="text"
+              placeholder="Search patients..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-50 border border-transparent rounded-[1.5rem] py-4 pl-13 pr-6 text-sm font-bold text-slate-700 placeholder:text-slate-300 focus:bg-white focus:border-primary-500/20 outline-none transition-all h-14"
+            />
           </div>
-          
-          <div className="flex flex-wrap gap-4 pt-2 border-t border-slate-100 mt-2">
-            <select
-              value={dateRangeFilter}
-              onChange={(e) => setDateRangeFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-600 text-xs font-bold rounded-2xl px-4 py-3 outline-none focus:border-primary-500/50"
-            >
-              <option value="all">All Dates</option>
-              <option value="7days">Last 7 Days</option>
-              <option value="30days">Last 30 Days</option>
-              <option value="ytd">Year-to-Date</option>
-            </select>
 
-            <select
-              value={modeFilter}
-              onChange={(e) => setModeFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-600 text-xs font-bold rounded-2xl px-4 py-3 outline-none focus:border-primary-500/50"
-            >
-              <option value="all">All Modes</option>
-              <option value="video">Video Call</option>
-              <option value="audio">Audio Call</option>
-              <option value="text">Text Chat</option>
-              <option value="clinic">In-Clinic</option>
-            </select>
+          <div className="h-8 w-[1px] bg-slate-100" />
 
-            <select
-              value={apptTypeFilter}
-              onChange={(e) => setApptTypeFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-600 text-xs font-bold rounded-2xl px-4 py-3 outline-none focus:border-primary-500/50"
-            >
-              <option value="all">All Appt Types</option>
-              <option value="initial">Initial Consultations</option>
-              <option value="follow-up">Follow-ups</option>
-            </select>
+          {/* Analytics Tabs */}
+          <div className="flex bg-slate-50/80 p-1.5 rounded-[1.8rem] items-center h-14">
+            {['confirmed', 'pending', 'cancelled', 'finished'].map(f => (
+              <button
+                key={f}
+                onClick={() => setStatusFilter(f)}
+                className={`px-7 py-2 rounded-[1.2rem] flex items-center gap-3.5 transition-all whitespace-nowrap h-11 ${
+                  statusFilter === f 
+                    ? 'bg-white text-primary-600 shadow-sm border border-slate-100' 
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                <span className="text-[10px] font-black uppercase tracking-widest">{f}</span>
+                <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg ${
+                  statusFilter === f ? 'bg-primary-50 text-primary-600' : 'bg-slate-200 text-slate-400'
+                }`}>
+                  {statusCounts[f]}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="h-8 w-[1px] bg-slate-100" />
+
+          {/* Secondary Filters - Pill Style */}
+          <div className="flex items-center gap-3 flex-1 justify-end pr-3">
+            <div className="relative group/filter h-14 flex items-center">
+              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-primary-600/50" />
+              <select
+                value={dateRangeFilter}
+                onChange={(e) => setDateRangeFilter(e.target.value)}
+                className="bg-slate-50 border border-transparent text-slate-500 text-[10px] font-black uppercase tracking-widest rounded-2xl pl-11 pr-8 h-11 outline-none focus:bg-white focus:border-primary-500/20 appearance-none cursor-pointer hover:bg-slate-100 transition-all"
+              >
+                <option value="all">Any Date</option>
+                <option value="7days">7 Days</option>
+                <option value="30days">30 Days</option>
+                <option value="ytd">Yearly</option>
+              </select>
+            </div>
+
+            <div className="relative group/filter h-14 flex items-center">
+              <Video className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-500/50" />
+              <select
+                value={modeFilter}
+                onChange={(e) => setModeFilter(e.target.value)}
+                className="bg-slate-50 border border-transparent text-slate-500 text-[10px] font-black uppercase tracking-widest rounded-2xl pl-11 pr-8 h-11 outline-none focus:bg-white focus:border-primary-500/20 appearance-none cursor-pointer hover:bg-slate-100 transition-all"
+              >
+                <option value="all">Any Mode</option>
+                <option value="video">Video</option>
+                <option value="audio">Audio</option>
+                <option value="clinic">Clinic</option>
+              </select>
+            </div>
+
+            {(searchTerm || dateRangeFilter !== 'all' || modeFilter !== 'all' || apptTypeFilter !== 'all') && (
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setDateRangeFilter('all');
+                  setModeFilter('all');
+                  setApptTypeFilter('all');
+                }}
+                className="h-11 w-11 flex items-center justify-center bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-500 hover:text-white transition-all group/clear border border-rose-100 shadow-sm"
+                title="Clear All Filters"
+              >
+                <X className="h-4 w-4 transition-transform group-hover:rotate-90" />
+              </button>
+            )}
           </div>
         </div>
 
         {loading ? (
           <div className="py-40 flex flex-col items-center justify-center space-y-4">
-            <div className="h-12 w-12 border-4 border-slate-100 border-t-primary-600 rounded-full animate-spin"></div>
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Syncing Registry...</span>
+            <div className="h-10 w-10 border-4 border-slate-100 border-t-primary-600 rounded-full animate-spin"></div>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Syncing Data...</span>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 pb-20">
             {filteredAppointments.length > 0 ? filteredAppointments.map((apt, idx) => (
               <motion.div
                 key={apt._id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-primary-600/5 hover:border-primary-100 transition-all flex flex-col md:flex-row md:items-center gap-8 group relative overflow-hidden"
+                transition={{ delay: idx * 0.03 }}
+                onClick={() => setSelectedAudit(apt)}
+                className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:shadow-primary-600/5 hover:border-primary-200 transition-all flex flex-col md:flex-row md:items-center gap-8 group relative cursor-pointer"
               >
+                {/* Visual Accent */}
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-12 bg-primary-600 rounded-r-full opacity-0 group-hover:opacity-100 transition-all" />
+
                 <div className="flex items-center gap-6 md:w-80">
-                  <div className="h-16 w-16 rounded-3xl bg-slate-50 flex items-center justify-center group-hover:bg-primary-50 transition-colors">
-                    <User className="h-8 w-8 text-slate-300 group-hover:text-primary-600 transition-colors" />
+                  <div className="h-16 w-16 rounded-3xl bg-slate-50 flex items-center justify-center border border-slate-100 group-hover:bg-primary-50 group-hover:border-primary-100 transition-all">
+                    <User className="h-8 w-8 text-slate-200 group-hover:text-primary-600 transition-all" />
                   </div>
                   <div>
                     <h4 className="text-base font-black text-slate-900 group-hover:text-primary-700 transition-colors">{getPatientName(apt)}</h4>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded-md">ID: {apt._id?.slice(-6)}</span>
-                      {apt.type && <span className="text-[9px] font-black text-primary-600 uppercase tracking-widest bg-primary-50 px-2 py-0.5 rounded-md">{apt.type}</span>}
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">#{apt._id?.slice(-6)}</span>
+                      {apt.type && <span className="text-[9px] font-black text-primary-500 uppercase tracking-widest bg-primary-50/50 px-2 py-0.5 rounded-md border border-primary-100/50">{apt.type}</span>}
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-2 gap-10 flex-1">
+                <div className="grid grid-cols-2 gap-12 flex-1">
                   <div className="flex flex-col">
-                    <label className="text-[9px] font-black uppercase tracking-[2px] text-slate-300 mb-2">Registration Date</label>
+                    <label className="text-[9px] font-black uppercase tracking-[2px] text-slate-300 mb-3">Registration Date</label>
                     <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 bg-slate-50 rounded-xl flex items-center justify-center">
-                        <Calendar className="h-4 w-4 text-slate-400" />
-                      </div>
-                      <span className="text-sm font-bold text-slate-800">{new Date(apt.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
+                      <Calendar className="h-4 w-4 text-primary-600/40" />
+                      <span className="text-sm font-bold text-slate-700">{new Date(apt.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
                     </div>
                   </div>
                   <div className="flex flex-col">
-                    <label className="text-[9px] font-black uppercase tracking-[2px] text-slate-300 mb-2">Status Flag</label>
-                    <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl w-fit border ${apt.status === 'confirmed' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' :
-                        apt.status === 'cancelled' ? 'bg-rose-50 border-rose-100 text-rose-600' :
-                          'bg-primary-50 border-primary-100 text-primary-600'
-                      } text-[10px] font-black uppercase tracking-widest`}>
-                      <div className={`h-1.5 w-1.5 rounded-full ${apt.status === 'confirmed' ? 'bg-emerald-600' : apt.status === 'cancelled' ? 'bg-rose-600' : 'bg-primary-600'} animate-pulse`} />
-                      {apt.status}
+                    <label className="text-[9px] font-black uppercase tracking-[2px] text-slate-300 mb-3">Status Flag</label>
+                    <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl w-fit border ${
+                      getStatusBucket(apt) === 'confirmed' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' :
+                      getStatusBucket(apt) === 'cancelled' ? 'bg-rose-50 border-rose-100 text-rose-600' :
+                      getStatusBucket(apt) === 'finished' ? 'bg-slate-100 border-slate-200 text-slate-600' :
+                      'bg-primary-50 border-primary-100 text-primary-600'
+                    } text-[10px] font-black uppercase tracking-widest`}>
+                      <div className={`h-1.5 w-1.5 rounded-full ${
+                        getStatusBucket(apt) === 'confirmed' ? 'bg-emerald-500' : 
+                        getStatusBucket(apt) === 'cancelled' ? 'bg-rose-500' : 
+                        getStatusBucket(apt) === 'finished' ? 'bg-slate-400' : 
+                        'bg-primary-500'
+                      }`} />
+                      {getStatusBucket(apt)}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-3 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button 
-                    onClick={() => handleDownload(apt)}
-                    className="h-12 w-12 flex items-center justify-center bg-slate-50 text-slate-400 rounded-2xl hover:bg-white hover:text-primary-600 hover:shadow-lg transition-all border border-transparent hover:border-slate-100"
-                  >
-                    <Download size={18} />
-                  </button>
-                  <button 
-                    onClick={() => setSelectedAudit(apt)}
-                    className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary-600 active:scale-95 transition-all flex items-center gap-2 shadow-xl shadow-slate-900/10 hover:shadow-primary-600/20"
-                  >
-                    Full Audit <ChevronRight size={14} strokeWidth={3} />
-                  </button>
+                <div className="opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center h-12 w-12 bg-primary-50 text-primary-600 rounded-2xl border border-primary-100">
+                  <ChevronRight className="h-5 w-5" />
                 </div>
               </motion.div>
             )) : (
-              <div className="py-40 bg-white rounded-[4rem] border-2 border-dashed border-slate-100 flex flex-col items-center justify-center text-center space-y-6">
-                <div className="h-24 w-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center">
-                  <History size={40} className="text-slate-200" />
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-32 text-center bg-white rounded-[3rem] border border-slate-100 shadow-sm">
+                <div className="h-20 w-20 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                  <Search className="h-8 w-8 text-slate-200" />
                 </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 italic">No Registry Records</h3>
-                  <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mt-2 max-w-xs leading-relaxed">We couldn't find any historical data matching your current search parameters.</p>
-                </div>
-                <button
-                  onClick={() => { 
-                    setSearchTerm(''); 
-                    setStatusFilter('confirmed'); 
-                    setDateRangeFilter('all');
-                    setModeFilter('all');
-                    setApptTypeFilter('all');
-                  }}
-                  className="px-8 py-3.5 bg-primary-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary-500/20"
-                >
-                  Clear Filters
-                </button>
-              </div>
+                <h3 className="text-xl font-black text-slate-900 mb-2">No Matching Records</h3>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Adjust your filters or search terms to try again</p>
+              </motion.div>
             )}
           </div>
         )}
 
         <AnimatePresence>
           {selectedAudit && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-              <motion.div 
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                onClick={() => setSelectedAudit(null)}
-                className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-              />
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden relative z-10 flex flex-col max-h-[85vh]"
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 md:p-12">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedAudit(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="relative w-full max-w-4xl bg-white rounded-[3.5rem] shadow-2xl flex flex-col border border-slate-100 overflow-hidden max-h-[90vh]"
               >
-                <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                      <History className="h-6 w-6 text-primary-600" />
+                <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <div className="flex items-center gap-5">
+                    <div className="h-14 w-14 bg-primary-600 rounded-[1.4rem] flex items-center justify-center shadow-lg shadow-primary-600/20 text-white">
+                      <History className="h-7 w-7" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-black text-slate-900 leading-tight">Clinical Audit Log</h3>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Historical Session Data</p>
+                      <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none mb-1.5">Clinical Session Audit</h3>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">Session ID: #{selectedAudit._id}</p>
                     </div>
                   </div>
-                  <button onClick={() => setSelectedAudit(null)} className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-white transition-colors text-slate-400"><X size={20} /></button>
+                  <button onClick={() => setSelectedAudit(null)} className="h-12 w-12 flex items-center justify-center rounded-2xl bg-white hover:bg-rose-50 hover:text-rose-500 transition-all text-slate-400 border border-slate-100"><X size={20} /></button>
                 </div>
 
-                <div className="p-8 overflow-y-auto space-y-8 flex-1">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100">
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-2">Patient</label>
-                      <div className="flex items-center gap-3">
-                         <div className="h-10 w-10 rounded-xl bg-white flex items-center justify-center shadow-sm"><User size={18} className="text-primary-500" /></div>
-                         <span className="text-sm font-bold text-slate-800">{getPatientName(selectedAudit)}</span>
-                      </div>
+                <div className="p-10 overflow-y-auto custom-scrollbar flex-1 space-y-10">
+                  {/* Patient Header Card */}
+                  <div className="bg-white border border-slate-100 p-8 rounded-[2.5rem] shadow-sm flex items-center gap-8">
+                    <div className="h-20 w-20 rounded-[1.8rem] bg-slate-50 flex items-center justify-center border border-slate-100">
+                      <User className="h-10 w-10 text-slate-200" />
                     </div>
-                    <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100">
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-2">Session Type</label>
-                      <div className="flex items-center gap-3">
-                         <div className="h-10 w-10 rounded-xl bg-white flex items-center justify-center shadow-sm">
-                           {selectedAudit.type === 'online' ? <Video size={18} className="text-indigo-500" /> : <Building2 size={18} className="text-emerald-500" />}
-                         </div>
-                         <span className="text-sm font-bold text-slate-800 uppercase tracking-widest">{selectedAudit.type || 'In-Person'}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-2xl font-black text-slate-900">{getPatientName(selectedAudit)}</h4>
+                        <div className="flex items-center gap-2 px-4 py-1.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 text-[10px] font-black uppercase tracking-widest">
+                          <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          Authenticated Session
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-8">
+                        <div>
+                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-300 block mb-1">Date</label>
+                          <span className="text-xs font-bold text-slate-600">{new Date(selectedAudit.createdAt).toLocaleDateString(undefined, { dateStyle: 'full' })}</span>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-300 block mb-1">Mode</label>
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                            {selectedAudit.type === 'online' ? <Video size={14} className="text-indigo-500" /> : <Building2 size={14} className="text-emerald-500" />}
+                            <span className="uppercase">{selectedAudit.type || 'In-Person'}</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-300 block mb-1">Duration</label>
+                          <span className="text-xs font-bold text-slate-600">{selectedAudit.duration || '30'} Minutes</span>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <label className="text-[10px] font-black uppercase tracking-[3px] text-slate-300 block ml-1 text-center">Diagnostic Summary</label>
-                    {parseDiagnosis(selectedAudit.sessionData?.diagnosis).map((report, i) => (
-                      <div key={i} className="p-6 rounded-[2rem] bg-indigo-50/30 border border-indigo-100 flex flex-col gap-4">
-                         <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-indigo-700 uppercase tracking-widest">{report.title}</span>
-                            <button 
-                              onClick={() => downloadMedicalReportPDF(report.reportData, { reportType: report.reportType, reportTitle: report.title })}
-                              className="text-[9px] font-black uppercase tracking-widest text-indigo-600 underline"
-                            >
-                              Download PDF
-                            </button>
-                         </div>
-                         <div className="bg-white/80 p-5 rounded-2xl border border-white text-sm text-slate-600 leading-relaxed max-h-40 overflow-y-auto">
-                            {report.reportData?.diagnosis?.reasoning || report.reportData?.lifestyleChanges || "No detailed clinical summary available in this record."}
-                         </div>
-                      </div>
-                    ))}
-                    {!selectedAudit.sessionData?.diagnosis && (
-                       <div className="py-12 text-center bg-slate-50 rounded-[2rem] border border-dashed border-slate-200">
-                          <Info className="h-8 w-8 text-slate-200 mx-auto mb-3" />
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No clinical notes recorded for this session</p>
-                       </div>
-                    )}
+                  {/* Diagnosis Section */}
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <div className="h-[1px] flex-1 bg-slate-100" />
+                      <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-300">Clinical Findings</span>
+                      <div className="h-[1px] flex-1 bg-slate-100" />
+                    </div>
+
+                    <div className="space-y-4">
+                      {parseDiagnosis(selectedAudit.sessionData?.diagnosis).length > 0 ? (
+                        parseDiagnosis(selectedAudit.sessionData?.diagnosis).map((report, i) => (
+                          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="group/report p-8 rounded-[2.5rem] bg-slate-50 border border-slate-100 hover:bg-white hover:shadow-xl hover:shadow-primary-600/5 hover:border-primary-100 transition-all">
+                            <div className="flex items-center justify-between mb-6">
+                              <div className="flex items-center gap-3">
+                                <div className="h-10 w-10 bg-white rounded-xl flex items-center justify-center text-primary-600 shadow-sm border border-slate-100">
+                                  <Info size={20} />
+                                </div>
+                                <span className="text-sm font-black text-slate-900 uppercase tracking-widest">{report.title}</span>
+                              </div>
+                              <button 
+                                onClick={() => downloadMedicalReportPDF(report.reportData, { reportType: report.reportType, reportTitle: report.title })}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-primary-600 hover:text-white text-primary-600 rounded-xl border border-slate-100 transition-all text-[10px] font-black uppercase tracking-widest shadow-sm"
+                              >
+                                <Download size={14} />
+                                Download Report
+                              </button>
+                            </div>
+                            <div className="bg-white p-6 rounded-2xl border border-slate-100 text-sm text-slate-600 leading-relaxed font-medium">
+                              {report.reportData?.diagnosis?.reasoning || report.reportData?.lifestyleChanges || "Detailed clinical analysis summary is available in the attached PDF document."}
+                            </div>
+                          </motion.div>
+                        ))
+                      ) : (
+                        <div className="py-20 text-center bg-slate-50 rounded-[3rem] border border-dashed border-slate-200">
+                          <div className="h-16 w-16 bg-white rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                            <Info className="h-8 w-8 text-slate-200" />
+                          </div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">No clinical reports found for this session</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="p-8 bg-slate-50 border-t border-slate-100">
-                   <button 
+                <div className="p-10 bg-slate-50/50 border-t border-slate-100 flex items-center gap-4">
+                  <button 
                     onClick={() => setSelectedAudit(null)}
-                    className="w-full py-4 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-slate-900/10"
-                   >
-                     Close Registry Audit
-                   </button>
+                    className="flex-1 py-4.5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-slate-900/10 hover:bg-slate-800 transition-all"
+                  >
+                    Archive & Close Registry Audit
+                  </button>
                 </div>
               </motion.div>
             </div>

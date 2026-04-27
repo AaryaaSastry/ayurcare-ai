@@ -36,6 +36,7 @@ chatApiInstance.interceptors.request.use((config) => {
 export const patientApi = {
   getReports: () => api.get('/patient/reports'),
   getAppointments: () => api.get('/patient/appointments'),
+  getPrescription: (appointmentId) => api.get(`/patient/prescription/${appointmentId}`),
   updateProfile: (data) => api.patch('/patient/profile', data),
   hideAppointment: (id) => api.delete(`/patient/appointments/${id}`),
   deleteReport: (id) => api.delete(`/patient/reports/${id}`),
