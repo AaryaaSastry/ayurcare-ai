@@ -1,4 +1,4 @@
-﻿import {
+import {
   Home,
   User,
   LogOut,
@@ -19,10 +19,15 @@ const Sidebar = () => {
   const location = useLocation();
   const [onLeave, setOnLeave] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const user = JSON.parse(localStorage.getItem('user'));
 
   useEffect(() => {
-    doctorService.getProfile().then(profile => {
-      if (profile) setOnLeave(!!profile.onLeave);
+    doctorService.getProfile().then(p => {
+      if (p) {
+        setProfile(p);
+        setOnLeave(!!p.onLeave);
+      }
     }).catch(() => { });
   }, []);
 
@@ -89,6 +94,31 @@ const Sidebar = () => {
           );
         })}
       </nav>
+
+      {/* USER PROFILE INFO */}
+      <div className="px-6 mb-6">
+        <div className="bg-slate-50 rounded-[1.5rem] p-4 flex items-center gap-3 border border-slate-100">
+          <div className="h-12 w-12 rounded-2xl bg-white flex items-center justify-center overflow-hidden shadow-sm border border-slate-200">
+            {profile?.basicInfo?.profileImage || user?.profileImage ? (
+              <img 
+                src={profile?.basicInfo?.profileImage || user?.profileImage} 
+                alt="Profile" 
+                className="h-full w-full object-cover" 
+              />
+            ) : (
+              <User className="h-6 w-6 text-slate-300" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-black text-slate-900 truncate">
+              {profile?.basicInfo?.name || user?.name || 'Doctor'}
+            </p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">
+              {profile?.professionalInfo?.specialization || 'Ayurveda Expert'}
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* LEAVE TOGGLE */}
       <div className="px-6 mb-4">

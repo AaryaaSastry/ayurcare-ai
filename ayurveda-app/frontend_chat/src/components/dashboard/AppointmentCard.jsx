@@ -36,8 +36,12 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
             
             {/* Left section: Doctor info */}
             <div className="flex items-center gap-5 flex-1 min-w-0 relative z-10">
-               <div className={`w-14 h-14 rounded-2xl ring-2 ring-white border border-slate-200 flex items-center justify-center flex-shrink-0 transition-all duration-300 group-hover:scale-110 ${isConfirmed ? 'bg-emerald-50 text-emerald-600' : isPending ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
-                  <Activity size={22} strokeWidth={2.5} />
+               <div className={`w-14 h-14 rounded-2xl ring-2 ring-white border border-slate-200 flex items-center justify-center flex-shrink-0 transition-all duration-300 group-hover:scale-110 overflow-hidden ${isConfirmed ? 'bg-emerald-50 text-emerald-600' : isPending ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
+                  {appointment.doctorId?.basicInfo?.profileImage ? (
+                     <img src={appointment.doctorId.basicInfo.profileImage} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                     <Activity size={22} strokeWidth={2.5} />
+                  )}
                </div>
                
                <div className="flex-1 min-w-0">
@@ -127,11 +131,20 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
                      </div>
 
                      {/* Doctor Info */}
-                     <div className="bg-slate-50 rounded-xl p-5 border border-slate-200">
-                        <p className="text-xs font-bold uppercase text-slate-500 tracking-wide mb-3">Medical Professional</p>
-                        <div className="space-y-1">
-                           <h3 className="text-lg font-bold text-slate-900">{doctorName}</h3>
-                           <p className="text-sm text-slate-600 font-medium">{specialty}</p>
+                     <div className="bg-slate-50 rounded-xl p-5 border border-slate-200 flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 overflow-hidden flex items-center justify-center">
+                           {appointment.doctorId?.basicInfo?.profileImage ? (
+                              <img src={appointment.doctorId.basicInfo.profileImage} alt="" className="w-full h-full object-cover" />
+                           ) : (
+                              <User size={32} className="text-slate-300" />
+                           )}
+                        </div>
+                        <div className="flex-1">
+                           <p className="text-xs font-bold uppercase text-slate-500 tracking-wide mb-1">Medical Professional</p>
+                           <div className="space-y-0.5">
+                              <h3 className="text-lg font-bold text-slate-900">{doctorName}</h3>
+                              <p className="text-sm text-slate-600 font-medium">{specialty}</p>
+                           </div>
                         </div>
                      </div>
 
@@ -251,7 +264,11 @@ const AppointmentCard = ({ appointment, onDelete, onMessage, isListView = false 
 
          <div className="relative z-10 flex flex-col items-center text-center">
             <div className="w-24 h-24 rounded-[32px] mb-5 ring-4 ring-white bg-slate-100 p-1 border border-slate-200 shadow-inner overflow-hidden relative transition-transform group-hover:scale-105 duration-500 flex items-center justify-center">
-               <Activity size={48} className={`${isConfirmed ? 'text-emerald-600' : isPending ? 'text-amber-600' : 'text-slate-400'}`} strokeWidth={2} />
+               {appointment.doctorId?.basicInfo?.profileImage ? (
+                  <img src={appointment.doctorId.basicInfo.profileImage} alt="" className="w-full h-full object-cover rounded-[28px]" />
+               ) : (
+                  <Activity size={48} className={`${isConfirmed ? 'text-emerald-600' : isPending ? 'text-amber-600' : 'text-slate-400'}`} strokeWidth={2} />
+               )}
                <div className="absolute inset-0 bg-gradient-to-tr from-emerald-500/10 to-transparent"></div>
                <div className={`absolute bottom-2 right-2 w-4 h-4 border-4 rounded-full border-white ${isConfirmed ? 'bg-emerald-500 animate-pulse' : isPending ? 'bg-amber-500' : 'bg-slate-400'}`}></div>
             </div>

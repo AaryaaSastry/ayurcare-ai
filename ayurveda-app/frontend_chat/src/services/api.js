@@ -39,6 +39,13 @@ export const patientApi = {
   updateProfile: (data) => api.patch('/patient/profile', data),
   hideAppointment: (id) => api.delete(`/patient/appointments/${id}`),
   deleteReport: (id) => api.delete(`/patient/reports/${id}`),
+  uploadProfileImage: (file) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    return api.post('/upload-profile-image', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
 };
 
 export const publicApi = {

@@ -601,20 +601,29 @@ const Messages = () => {
                 >
                 <button
                   onClick={() => navigate(`/messages/${chat._id}`)}
-                  className="flex-1 w-full text-left p-4 min-w-0"
+                  className="flex-1 w-full text-left p-4 min-w-0 flex items-center gap-3"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-bold truncate">{chat.participantName}</div>
-                      <div className={`text-xs truncate mt-1 ${chat._id === activeChatId ? 'text-white/80' : 'text-slate-500'}`}>
-                        {chat.lastMessage || 'No messages yet'}
-                      </div>
-                    </div>
-                    {chat.unreadCount > 0 && (
-                      <span className="min-w-6 h-6 px-2 rounded-full bg-emerald-500 text-white text-xs font-bold flex items-center justify-center">
-                        {chat.unreadCount}
-                      </span>
+                  <div className="w-10 h-10 rounded-full bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-100">
+                    {chat.participantProfileImage ? (
+                      <img src={chat.participantProfileImage} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <UserRound size={16} className={chat._id === activeChatId ? 'text-white/50' : 'text-slate-400'} />
                     )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-bold truncate">{chat.participantName}</div>
+                        <div className={`text-xs truncate mt-1 ${chat._id === activeChatId ? 'text-white/80' : 'text-slate-500'}`}>
+                          {chat.lastMessage || 'No messages yet'}
+                        </div>
+                      </div>
+                      {chat.unreadCount > 0 && (
+                        <span className="min-w-6 h-6 px-2 rounded-full bg-emerald-500 text-white text-xs font-bold flex items-center justify-center">
+                          {chat.unreadCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
                 <button
@@ -644,8 +653,12 @@ const Messages = () => {
               <>
                 <div className="sticky top-0 z-20 flex-shrink-0 px-8 py-5 bg-white/95 backdrop-blur border-b border-slate-200 flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-700">
-                      <UserRound size={20} />
+                    <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 overflow-hidden">
+                      {activeChat.participantProfileImage ? (
+                        <img src={activeChat.participantProfileImage} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <UserRound size={20} />
+                      )}
                     </div>
                     <div>
                       <div className="text-lg font-bold text-slate-900">{activeChat.participantName}</div>
@@ -665,7 +678,22 @@ const Messages = () => {
                   ) : activeMessages.map((message) => {
                     const isOwn = message.senderRole === 'DOCTOR';
                     return (
-                      <div key={message._id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                      <div key={message._id} className={`flex items-end gap-3 ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-200 mb-1">
+                          {isOwn ? (
+                            doctorData?.basicInfo?.profileImage ? (
+                              <img src={doctorData.basicInfo.profileImage} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <UserRound size={14} className="text-slate-400" />
+                            )
+                          ) : (
+                            activeChat.participantProfileImage ? (
+                              <img src={activeChat.participantProfileImage} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <UserRound size={14} className="text-slate-400" />
+                            )
+                          )}
+                        </div>
                         {message.type === 'NEGOTIATION' && message.negotiation ? (
                           <NegotiationCard
                             message={message}

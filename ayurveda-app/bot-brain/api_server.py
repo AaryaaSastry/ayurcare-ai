@@ -19,6 +19,8 @@ from bot import (
 from gemini_client import send, reset_trace, get_trace_snapshot
 
 load_dotenv()
+print(f"DEBUG: Startup Model: {os.getenv('model')}")
+print(f"DEBUG: Startup Gemini Key: {'Set' if os.getenv('GEMINI_API_KEY') else 'NOT SET'}")
 
 # ─── App & DB setup ──────────────────────────────────────────────────────────
 app = FastAPI(title="AyurvedaBot AI API")
@@ -516,35 +518,54 @@ async def ask(user_id: str = "default_session", data: dict = Body(...)):
                     try:
                         db_insert_report_start = perf_counter()
                         if reports_list:
-                            report_docs = []
-                            for r in reports_list:
-                                report_type = r.get("reportType") or "Diagnosis Report"
-                                report_title = r.get("title") or report_type
-                                report_data = r.get("reportData") if isinstance(r.get("reportData"), dict) else {}
-                                diagnosis_name = ""
-                                diagnosis_value = report_data.get("diagnosis")
-                                if isinstance(diagnosis_value, dict):
-                                    diagnosis_name = diagnosis_value.get("name", "")
-                                elif isinstance(diagnosis_value, str):
-                                    diagnosis_name = diagnosis_value
-                                symptoms_text = _report_symptoms_text(report_data)
-                                recommendations = _report_recommendation_text(report_data)
+                            diagnosis_report = next(
+                                (
+                                    r for r in reports_list
+                                    if str(r.get("reportType", "")).strip().lower() == "diagnosis report"
+                                ),
+                                reports_list[0],
+                            )
+                            diagnosis_data = diagnosis_report.get("reportData") if isinstance(diagnosis_report, dict) and isinstance(diagnosis_report.get("reportData"), dict) else {}
 
-                                report_docs.append({
+                            diagnosis_name = ""
+                            diagnosis_value = diagnosis_data.get("diagnosis")
+                            if isinstance(diagnosis_value, dict):
+                                diagnosis_name = diagnosis_value.get("name", "")
+                            elif isinstance(diagnosis_value, str):
+                                diagnosis_name = diagnosis_value
+
+                            symptoms_text = _report_symptoms_text(diagnosis_data)
+                            recommendations = _report_recommendation_text(diagnosis_data)
+
+                            bundle_payload = {
+                                "schemaVersion": reports_payload.get("schemaVersion", "reports.v2") if isinstance(reports_payload, dict) else "reports.v2",
+                                "reports": reports_list
+                            }
+
+                            await db.reports.update_one(
+                                {
                                     "patientId": session["userId"],
-                                    "sessionId": ObjectId(session_id),
-                                    "reportType": report_type,
-                                    "reportTitle": report_title,
-                                    "reportData": report_data,
-                                    "diagnosis": diagnosis_name or title,
-                                    "symptoms": symptoms_text,
-                                    "recommendations": recommendations,
-                                    "date": utcnow().strftime("%Y-%m-%d"),
-                                    "createdAt": utcnow()
-                                })
-
-                            if report_docs:
-                                await db.reports.insert_many(report_docs)
+                                    "sessionId": ObjectId(session_id)
+                                },
+                                {
+                                    "$set": {
+                                        "reportType": "Report Bundle",
+                                        "reportTitle": title,
+                                        "reportData": bundle_payload,
+                                        "diagnosis": diagnosis_name or title,
+                                        "symptoms": symptoms_text,
+                                        "recommendations": recommendations,
+                                        "date": utcnow().strftime("%Y-%m-%d"),
+                                        "createdAt": utcnow(),
+                                        "hiddenByPatient": False
+                                    },
+                                    "$setOnInsert": {
+                                        "patientId": session["userId"],
+                                        "sessionId": ObjectId(session_id)
+                                    }
+                                },
+                                upsert=True
+                            )
                         else:
                             rj = json.loads(report_json)
                             await db.reports.insert_one({

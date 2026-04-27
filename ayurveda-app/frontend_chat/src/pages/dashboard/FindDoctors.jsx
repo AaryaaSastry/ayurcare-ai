@@ -245,7 +245,11 @@ const FindDoctors = ({ embedded, diagnosis }) => {
                 <div className="absolute top-0 right-0 w-32 h-32 bg-ayur-sage/5 rounded-bl-[100px] -z-0 transition-transform group-hover:scale-125"></div>
                 <div className="relative z-10 flex flex-col items-center text-center">
                   <div className={`${embedded ? 'w-16 h-16 rounded-2xl mb-3 ring-2' : 'w-24 h-24 rounded-[32px] mb-5 ring-4'} bg-gray-50 p-1 border border-gray-100 shadow-inner overflow-hidden relative ring-white shadow-xl transition-transform group-hover:scale-105 duration-500`}>
-                    <User size={embedded ? 40 : 64} className={`text-gray-200 ${embedded ? 'mt-2' : 'mt-4'} mx-auto`} />
+                    {doctor.basicInfo?.profileImage ? (
+                      <img src={doctor.basicInfo.profileImage} alt={doctor.basicInfo?.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <User size={embedded ? 40 : 64} className={`text-gray-200 ${embedded ? 'mt-2' : 'mt-4'} mx-auto`} />
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-tr from-ayur-sage/10 to-transparent"></div>
                     <div className={`absolute bottom-2 right-2 ${embedded ? 'w-3 h-3 border-2' : 'w-4 h-4 border-4'} bg-emerald-500 rounded-full border-white`}></div>
                   </div>

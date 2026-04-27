@@ -8,9 +8,11 @@ import {
   Stethoscope, 
   Building2,
   Clock,
-  Loader2
+  Loader2,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { doctorService } from '../services/api';
 
 const StepForm = ({ initialEmail, initialData, onSubmit, loading }) => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -21,6 +23,7 @@ const StepForm = ({ initialEmail, initialData, onSubmit, loading }) => {
       gender: initialData?.basicInfo?.gender || 'Male',
       phone: initialData?.basicInfo?.phone || '',
       email: initialData?.basicInfo?.email || initialEmail || '',
+      profileImage: initialData?.basicInfo?.profileImage || '',
     },
     professionalInfo: {
       qualification: initialData?.professionalInfo?.qualification || '',
@@ -174,6 +177,38 @@ const StepForm = ({ initialEmail, initialData, onSubmit, loading }) => {
               <div className="h-10 w-2 bg-primary-600 rounded-full"></div>
               Basic Information
             </h2>
+
+            <div className="flex justify-center mb-6">
+              <div className="relative group">
+                <div className="h-24 w-24 bg-slate-100 rounded-[2rem] flex items-center justify-center overflow-hidden border-4 border-white shadow-xl">
+                  {formData.basicInfo.profileImage ? (
+                    <img src={formData.basicInfo.profileImage} alt="Profile" className="h-full w-full object-cover" />
+                  ) : (
+                    <User className="h-10 w-10 text-slate-300" />
+                  )}
+                </div>
+                <label className="absolute -bottom-2 -right-2 h-10 w-10 bg-primary-600 rounded-2xl flex items-center justify-center text-white cursor-pointer shadow-lg hover:bg-primary-700 transition-colors border-4 border-white">
+                  <Activity className="h-4 w-4" />
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const result = await doctorService.uploadProfileImage(file);
+                        if (result.success) {
+                          handleChange('basicInfo', 'profileImage', result.imageUrl);
+                        } else {
+                          alert("Error uploading image: " + result.error);
+                        }
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+
             <FormInput 
               label="Full Name" 
               value={formData.basicInfo.name} 

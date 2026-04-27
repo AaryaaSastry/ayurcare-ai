@@ -4,6 +4,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
+const path = require('path');
+const multer = require('multer');
+const fs = require('fs');
 require('dotenv').config();
 
 const User = require('./models/User');
@@ -24,6 +27,23 @@ const MONGODB_URI = 'mongodb+srv://doc-connect:doc-connect@doc-connect.mpev56u.m
 // Middleware
 app.use(cors());
 app.use(express.json());
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadDir));
+
+// Multer Setup
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+const upload = multer({ storage });
 
 const io = new Server(server, {
   cors: {
@@ -90,6 +110,28 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Profile Image Upload
+app.post('/api/upload-profile-image', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    
+    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    
+    // Update both User and Doctor if applicable
+    const user = await User.findByIdAndUpdate(req.userId, { profileImage: imageUrl }, { new: true });
+    
+    const doctor = await Doctor.findOneAndUpdate(
+      { userId: req.userId },
+      { $set: { 'basicInfo.profileImage': imageUrl } },
+      { new: true }
+    );
+
+    res.json({ imageUrl, user, doctor });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // --- AUTH ROUTES ---
 
 app.post('/api/auth/signup', async (req, res) => {
@@ -135,7 +177,7 @@ app.post('/api/auth/login', async (req, res) => {
         weight: user.weight,
         phone: user.phone,
         address: user.address,
-        avatar: user.avatar,
+        profileImage: user.profileImage,
         isOnboarded: user.isOnboarded
       }
     });
@@ -348,6 +390,8 @@ app.patch('/api/appointments/:id/status', authenticateToken, async (req, res) =>
     res.status(500).json({ message: err.message });
   }
 });
+
+
 
 app.use('/api/chat', authenticateToken, chatRoutes);
 

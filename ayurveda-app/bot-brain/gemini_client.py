@@ -1,131 +1,111 @@
-"""
-Thin LLM wrapper.
-
-Priority:
-1. Google Gemini (GEMINI_API_KEY)
-2. OpenAI (OPENAI_API_KEY)
-3. Deterministic fallback
-"""
-
 import os
-import time
-from contextvars import ContextVar
-from typing import Optional
+import json
+from datetime import datetime
+from google import genai
+from dotenv import load_dotenv
 
-_trace_var: ContextVar[list] = ContextVar("llm_trace", default=[])
+# Shared trace for telemetry
+_llm_trace = []
 
+def reset_trace():
+    global _llm_trace
+    _llm_trace = []
 
-def _local_fallback(prompt: str) -> str:
-    return (
-        "Thank you for sharing. Could you please tell me a little more about:\n"
-        "- When the symptoms started?\n"
-        "- What makes them better or worse?\n"
-        "- How severe they feel (mild/moderate/severe)?"
-    )
+def get_trace_snapshot():
+    return list(_llm_trace)
 
-
-def reset_trace() -> None:
-    _trace_var.set([])
-
-
-def get_trace_snapshot() -> list:
-    return list(_trace_var.get())
-
-
-def _append_trace(entry: dict) -> None:
-    current = list(_trace_var.get())
-    current.append(entry)
-    _trace_var.set(current)
-
-
-def send(prompt: str, max_tokens: int = 256, model: Optional[str] = None) -> str:
-    """
-    Send prompt to an LLM and return a text reply.
-    """
-    start = time.perf_counter()
-
-    # ==========================
-    # 1️⃣ GEMINI
-    # ==========================
+def _log_raw_response(prompt, response_text):
+    """Debug helper to see exactly what the AI is returning."""
     try:
-        from google import genai
-        from dotenv import load_dotenv
+        log_dir = os.path.join(os.path.dirname(__file__), "logs")
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
         
-        # Ensure .env is loaded from the correct directory
-        env_path = os.path.join(os.path.dirname(__file__), '.env')
-        load_dotenv(dotenv_path=env_path)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        log_file = os.path.join(log_dir, f"ai_response_{timestamp}.log")
         
-        gem_key = os.getenv("GEMINI_API_KEY")
-        configured_model = os.getenv("model")
-
-        if gem_key:
-            client = genai.Client(api_key=gem_key)
-            
-            # Use model from .env if available, else fallback
-            model_name = model or configured_model or "gemini-2.0-flash"
-
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-            )
-
-            if hasattr(response, "text") and response.text:
-                elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
-                _append_trace({
-                    "provider": "gemini",
-                    "model": model_name,
-                    "latency_ms": elapsed_ms,
-                    "prompt_chars": len(prompt),
-                    "success": True,
-                })
-                return response.text.strip()
-
+        with open(log_file, "w", encoding="utf-8") as f:
+            f.write("=== PROMPT ===\n")
+            f.write(prompt)
+            f.write("\n\n=== RESPONSE ===\n")
+            f.write(response_text)
     except Exception as e:
-        print(f"❌ Gemini Error: {str(e)}")
-        pass
+        print(f"Failed to log raw response: {e}")
 
-    # ==========================
-    # 2️⃣ OPENAI (fallback)
-    # ==========================
-    try:
-        import openai
+def send(prompt, model=None, max_tokens=1024):
+    """
+    Unified send function.
+    Tries Google Gemini first, then OpenAI if available.
+    """
+    from time import perf_counter
+    start_time = perf_counter()
+    
+    _local_fallback = "Thank you for sharing. Could you please tell me a little more about: When the symptoms started? What makes them better or worse? How severe they feel (mild/moderate/severe)?"
+    
+    import time
+    max_retries = 3
+    retry_delay = 1 # second
+    
+    for attempt in range(max_retries):
+        try:
+            # Ensure .env is loaded from the correct directory
+            env_path = os.path.join(os.path.dirname(__file__), '.env')
+            load_dotenv(dotenv_path=env_path, override=True)
+            
+            gem_key = os.getenv("GEMINI_API_KEY")
+            configured_model = os.getenv("model")
+            
+            if gem_key:
+                client = genai.Client(api_key=gem_key)
+                
+                # Use model from .env if available, else fallback
+                model_name = model or configured_model or "gemma-3-27b-it"
 
-        key = os.environ.get("OPENAI_API_KEY")
-        if key:
-            openai.api_key = key
+                # Explicitly disable safety filters for clinical technical analysis
+                safety_settings = [
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+                ]
 
-            model_name = model or "gpt-4o-mini"
-            response = openai.ChatCompletion.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": "You are a warm Ayurvedic assistant."},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=max_tokens,
-            )
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config={
+                        'safety_settings': safety_settings,
+                        'temperature': 0.1,
+                        'max_output_tokens': max_tokens
+                    }
+                )
 
-            elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
-            _append_trace({
-                "provider": "openai",
-                "model": model_name,
-                "latency_ms": elapsed_ms,
-                "prompt_chars": len(prompt),
-                "success": True,
-            })
-            return response.choices[0].message["content"].strip()
+                if hasattr(response, "text") and response.text:
+                    res_text = response.text
+                    _log_raw_response(prompt, res_text) # LOG FOR DEBUGGING
+                    
+                    _llm_trace.append({
+                        "model": model_name,
+                        "latency_ms": round((perf_counter() - start_time) * 1000, 2),
+                        "status": "success"
+                    })
+                    return res_text
+                else:
+                    print(f"⚠️ Gemini returned empty or blocked response. Model: {model_name}")
+                    if hasattr(response, "candidates") and response.candidates:
+                        print(f"   Finish Reason: {response.candidates[0].finish_reason}")
+            
+            # If we reached here without a response, and it's not the last attempt, break and fallback
+            break
 
-    except Exception:
-        pass
-
-    # ==========================
-    # 3️⃣ FINAL FALLBACK
-    # ==========================
-    elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
-    _append_trace({
-        "provider": "local_fallback",
-        "model": "deterministic",
-        "latency_ms": elapsed_ms,
-        "prompt_chars": len(prompt),
-        "success": True,
-    })
-    return _local_fallback(prompt)
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                print(f"🔄 Rate limit hit (429). Retrying in {retry_delay}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(retry_delay)
+                retry_delay *= 2 # Exponential backoff
+                continue
+            
+            print(f"❌ Gemini Error during send(): {type(e).__name__}: {err_str}")
+            break
+    
+    return _local_fallback

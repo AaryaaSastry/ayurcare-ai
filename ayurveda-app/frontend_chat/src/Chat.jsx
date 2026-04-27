@@ -502,12 +502,16 @@ const Chat = () => {
                       })()
                     ) : (
                     <div className={`flex gap-6 max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                      <div className={`w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center shadow-md border-2 transition-transform hover:scale-105 ${msg.role === 'user' ? 'bg-slate-100 border-slate-200 text-slate-900' : 'bg-white border-slate-200 text-emerald-600'}`}>
+                      <div className={`w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center shadow-md border-2 transition-transform hover:scale-105 overflow-hidden ${msg.role === 'user' ? 'bg-slate-100 border-slate-200 text-slate-900' : 'bg-white border-slate-200 text-emerald-600'}`}>
                         {msg.role === 'user' ? (
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="12" cy="7" r="4"></circle>
-                          </svg>
+                          userData.profileImage ? (
+                            <img src={userData.profileImage} alt="User" className="w-full h-full object-cover" />
+                          ) : (
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                              <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                              <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                          )
                         ) : <Bot size={20} strokeWidth={2.5} />}
                       </div>
                       <div className={`flex flex-col gap-2.5 ${msg.role === 'user' ? 'items-end' : ''}`}>

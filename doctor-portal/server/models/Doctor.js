@@ -8,6 +8,7 @@ const doctorSchema = new mongoose.Schema({
     gender: String,
     phone: String,
     email: { type: String, required: true },
+    profileImage: String,
   },
   professionalInfo: {
     qualification: String,

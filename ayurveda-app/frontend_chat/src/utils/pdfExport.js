@@ -92,83 +92,119 @@ export async function downloadMedicalReportPDF(report, options = {}) {
     const drawNarrativeBlock = (title, body, accent = null) => {
       const mainText = toNarrativeText(body);
       const accentText = toNarrativeText(accent);
-      if (isEmpty(mainText) && isEmpty(accentText)) return;
+
+      console.log(`[PDF DEBUG] Drawing Block: ${title}`, { body: mainText.substring(0, 50) + "..." });
+
+      if (isEmpty(mainText) && isEmpty(accentText)) {
+        console.warn(`[PDF DEBUG] Block ${title} is empty, skipping.`);
+        return;
+      }
 
       const bulletPoints = mainText.includes('- ') ? mainText.split('\n').filter(l => l.trim().startsWith('-')) : [];
       const cleanBody = bulletPoints.length ? mainText.split('\n').filter(l => !l.trim().startsWith('-')).join('\n') : mainText;
+
+      doc.setFont('times', 'normal');
+      doc.setFontSize(9.5);
       const cleanBodyLines = doc.splitTextToSize(cleanBody, 170);
       const accentLines = isEmpty(accentText) ? [] : doc.splitTextToSize(accentText, 170);
 
-      const blockHeight = (cleanBodyLines.length * 5.5) + (bulletPoints.length * 7) + (accentLines.length ? accentLines.length * 5.2 + 8 : 0) + 18;
-      ensurePageSpace(blockHeight + 10);
+      const blockHeight = (cleanBodyLines.length * 6) + (bulletPoints.length * 7) + (accentLines.length ? accentLines.length * 6 + 10 : 0) + 15;
+      ensurePageSpace(blockHeight);
 
+      // Accent top bar
       doc.setDrawColor(PRIMARY_ACCENT[0], PRIMARY_ACCENT[1], PRIMARY_ACCENT[2]);
-      doc.setLineWidth(1.5);
-      doc.line(20, y - 2, 35, y - 2);
+      doc.setLineWidth(1.2);
+      doc.line(20, y - 2, 40, y - 2);
 
+      // Title
       doc.setFont('times', 'bold');
       doc.setFontSize(11);
       doc.setTextColor(HEADER_BLUE[0], HEADER_BLUE[1], HEADER_BLUE[2]);
       doc.text(title.toUpperCase(), 20, y + 4);
 
-      let textY = y + 12;
-      if (cleanBodyLines.length) {
-        doc.setFont('times', 'normal');
-        doc.setFontSize(9.5);
-        doc.setTextColor(40, 40, 40);
-        doc.text(cleanBodyLines, 20, textY, { maxWidth: 170, align: 'left', lineHeightFactor: 1.6 });
-        textY += cleanBodyLines.length * 5.5 + 8;
-      }
+      let textY = y + 11;
 
-      if (bulletPoints.length) {
-        doc.setFont('times', 'bold');
+      // Main Body
+      if (cleanBodyLines.length > 0) {
+        doc.setFont('times', 'normal');
         doc.setFontSize(10);
-        doc.setTextColor(PRIMARY_ACCENT[0], PRIMARY_ACCENT[1], PRIMARY_ACCENT[2]);
-        bulletPoints.forEach(point => {
-          doc.text('•', 22, textY);
-          doc.text(point.replace(/^- /, '').trim(), 28, textY, { maxWidth: 160 });
-          textY += 7;
+        doc.setTextColor(40, 40, 40);
+        cleanBodyLines.forEach(line => {
+          doc.text(line, 20, textY);
+          textY += 5.5;
         });
         textY += 4;
       }
 
-      if (accentLines.length) {
-        doc.setFont('times', 'bold');
+      // Bullet Points
+      if (bulletPoints.length > 0) {
         doc.setFontSize(10);
+        bulletPoints.forEach(point => {
+          const pText = point.replace(/^- /, '').trim();
+          const wrappedPoint = doc.splitTextToSize(pText, 160);
+
+          doc.setFillColor(PRIMARY_ACCENT[0], PRIMARY_ACCENT[1], PRIMARY_ACCENT[2]);
+          doc.circle(22, textY - 1, 0.8, 'F');
+
+          wrappedPoint.forEach((line, i) => {
+            doc.setFont('times', 'normal');
+            doc.text(line, 26, textY);
+            textY += 5.5;
+          });
+        });
+        textY += 4;
+      }
+
+      // Accent/Highlight
+      if (accentLines.length > 0) {
+        doc.setFont('times', 'bold');
+        doc.setFontSize(9);
         doc.setTextColor(HEADER_BLUE[0], HEADER_BLUE[1], HEADER_BLUE[2]);
         doc.text('CLINICAL HIGHLIGHT', 20, textY);
-        doc.setFont('times', 'normal');
-        doc.setFontSize(10);
+        textY += 5;
+
+        doc.setFont('times', 'italic');
+        doc.setFontSize(9.5);
         doc.setTextColor(60, 60, 60);
-        doc.text(accentLines, 20, textY + 6, { maxWidth: 170, align: 'left', lineHeightFactor: 1.5 });
-        textY += accentLines.length * 5.5 + 8;
+        accentLines.forEach(line => {
+          doc.text(line, 20, textY);
+          textY += 5;
+        });
+        textY += 5;
       }
+
       y = textY + 5;
     };
 
     const drawReportKPIs = (kpis) => {
       if (!Array.isArray(kpis) || kpis.length === 0) return;
-      ensurePageSpace(20);
-      const kpiWidth = 170 / kpis.length;
-      let maxKpiHeight = 0;
-
-      const currentY = y;
+      
+      const colCount = 3;
+      const kpiWidth = 170 / colCount;
+      const rowCount = Math.ceil(kpis.length / colCount);
+      
+      ensurePageSpace(rowCount * 15 + 5);
+      
+      let currentKpiY = y;
       kpis.forEach((kpi, idx) => {
-        const kX = 20 + (idx * kpiWidth);
+        const col = idx % colCount;
+        const row = Math.floor(idx / colCount);
+        const kX = 20 + (col * kpiWidth);
+        const kY = currentKpiY + (row * 15);
+        
         doc.setFont('times', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(150, 150, 150);
-        doc.text(String(kpi.label).toUpperCase(), kX, currentY, { maxWidth: kpiWidth - 5 });
-
+        doc.setFontSize(8);
+        doc.setTextColor(120, 120, 120);
+        const labelLines = doc.splitTextToSize(String(kpi.label).toUpperCase(), kpiWidth - 5);
+        doc.text(labelLines, kX, kY);
+        
         doc.setFontSize(10);
         doc.setTextColor(PRIMARY_ACCENT[0], PRIMARY_ACCENT[1], PRIMARY_ACCENT[2]);
         const valLines = doc.splitTextToSize(String(kpi.value), kpiWidth - 5);
-        doc.text(valLines, kX, currentY + 6);
-
-        const h = 6 + (valLines.length * 4);
-        if (h > maxKpiHeight) maxKpiHeight = h;
+        doc.text(valLines, kX, kY + (labelLines.length * 4) + 1);
       });
-      y += maxKpiHeight + 5;
+      
+      y += (rowCount * 15) + 5;
     };
 
     const drawPainPoints = (points) => {
@@ -194,15 +230,15 @@ export async function downloadMedicalReportPDF(report, options = {}) {
       if (isEmpty(value)) return;
       const { isBullet = false, threatColor = false } = options;
 
-      const COL1_X  = 20;
-      const COL1_W  = 58;
-      const COL2_X  = COL1_X + COL1_W;
-      const COL2_W  = 112;
-      const LINE_H  = 5.5;
+      const COL1_X = 20;
+      const COL1_W = 58;
+      const COL2_X = COL1_X + COL1_W;
+      const COL2_W = 112;
+      const LINE_H = 5.5;
       const PAD_TOP = 6;
       const BULLET_X = COL2_X + 4;   // dot centre x
-      const TEXT_X   = COL2_X + 9;   // text start x after bullet
-      const TEXT_W   = COL2_W - 11;  // max text width in value col
+      const TEXT_X = COL2_X + 9;   // text start x after bullet
+      const TEXT_W = COL2_W - 11;  // max text width in value col
 
       // ── Pre-process value into renderable segments ──────────────────
       let segments = []; // { text, indent }  indent = true for bullet continuation
@@ -258,7 +294,7 @@ export async function downloadMedicalReportPDF(report, options = {}) {
         const tl = String(value).toUpperCase();
         let pillFill = [10, 140, 60]; let pillLabel = 'LOW PRIORITY';
         if (tl.includes('HIGH') || tl.includes('CRIT')) { pillFill = [195, 28, 28]; pillLabel = 'HIGH PRIORITY'; }
-        else if (tl.includes('MOD'))                    { pillFill = [165, 112, 0]; pillLabel = 'MEDIUM PRIORITY'; }
+        else if (tl.includes('MOD')) { pillFill = [165, 112, 0]; pillLabel = 'MEDIUM PRIORITY'; }
         // Draw pill background
         doc.setFillColor(pillFill[0], pillFill[1], pillFill[2]);
         doc.roundedRect(COL2_X + 3, y + 2, 62, 8, 2, 2, 'F');
@@ -546,10 +582,10 @@ export async function downloadMedicalReportPDF(report, options = {}) {
         const domDosha = report.doshaProfile?.dominant || report.diagnosis?.dosha || '';
         const dL = domDosha.toLowerCase();
         let doshaExp = 'Tridosha — Vata (movement), Pitta (metabolism), and Kapha (structure) are in balance. Maintaining this equilibrium is essential for sustained wellbeing.';
-        if (dL.includes('vata'))  doshaExp = 'Vata (Air/Ether) — Controls movement: nerve signals, breathing, circulation. Balanced: creativity, vitality, alertness. Imbalanced: anxiety, dry skin, insomnia, poor digestion.';
+        if (dL.includes('vata')) doshaExp = 'Vata (Air/Ether) — Controls movement: nerve signals, breathing, circulation. Balanced: creativity, vitality, alertness. Imbalanced: anxiety, dry skin, insomnia, poor digestion.';
         else if (dL.includes('pitta')) doshaExp = 'Pitta (Fire/Water) — Controls digestion, metabolism, intelligence. Balanced: focus, confidence, healthy skin. Imbalanced: inflammation, acid reflux, irritability, fever.';
         else if (dL.includes('kapha')) doshaExp = 'Kapha (Earth/Water) — Controls structure, lubrication, immunity. Balanced: calm, strength, resilience. Imbalanced: lethargy, weight gain, congestion, low motivation.';
-        
+
         doc.setFont('times', 'bold'); doc.setFontSize(10); doc.setTextColor(40, 40, 40);
         doc.text('Dominant Dosha Context:', 20, y);
         y += 6;
@@ -564,7 +600,7 @@ export async function downloadMedicalReportPDF(report, options = {}) {
           doc.text(intLines, 20, y);
           y += (intLines.length * 4.5) + 10;
         }
-        
+
         // This is where the radar chart would normally be, but we'll move the drawing logic later 
         // to stay consistent with the existing helper calls.
       }
@@ -622,8 +658,8 @@ export async function downloadMedicalReportPDF(report, options = {}) {
       }
 
       // Dietary Guidance
-      const dietIn  = report.dietaryGuide?.toConsume || report.foodApproach;
-      const dietOut = report.dietaryGuide?.toAvoid   || report.avoidances;
+      const dietIn = report.dietaryGuide?.toConsume || report.foodApproach;
+      const dietOut = report.dietaryGuide?.toAvoid || report.avoidances;
       if (!isEmpty(dietIn) || !isEmpty(dietOut)) {
         doc.setFont('times', 'bold'); doc.setFontSize(10); doc.text('Dietary Guidance:', 20, y);
         y += 6;
@@ -660,21 +696,41 @@ export async function downloadMedicalReportPDF(report, options = {}) {
       drawNarrativeSectionTitle('II. SPECIALIST ASSESSMENT: ' + normalizedType.toUpperCase());
 
       // Render Specialist KPIs and Pain Points if present
-      drawReportKPIs(report.kpis);
-      drawPainPoints(report.pain_points);
+      drawReportKPIs(report.kpis || report.master_kpis);
+      drawPainPoints(report.pain_points || report.master_pain_points);
 
-      // Section 1
-      const s1_title = normalizedType === 'Comprehensive Report' ? 'Integrated Synthesis' :
-        normalizedType === 'Risk Report' ? 'Clinical Forecast' :
-          normalizedType === 'Treatment Plan Report' ? 'Therapeutic Strategy' :
-            normalizedType === 'Lifestyle Report' ? 'Daily Rhythm Script' :
-              'Disease Formation Narrative';
+      // --- Block 1: The Narrative ---
+      const s1_title = normalizedType === 'Risk Report' ? 'Clinical Forecast' :
+        normalizedType === 'Treatment Plan Report' ? 'Therapeutic Strategy' :
+          normalizedType === 'Lifestyle Report' ? 'Daily Rhythm Script' :
+            normalizedType === 'Master Report' ? 'Integrated Clinical Synthesis' :
+              normalizedType === 'Root Cause Report' ? 'Etiological Analysis' :
+                'Disease Formation Narrative';
 
-      drawNarrativeBlock(s1_title, report.section1_content || report.currentAssessment || report.prognosisSummary || report.rootCauseFocus || report.integrationNote || report.treatmentNarrative || report.synthesis || diagnosisReason || 'Focused clinical narrative.');
+      const s1_body = report.section1_content || report.integrated_synthesis || report.content || report.currentAssessment || report.prognosisSummary || report.rootCauseFocus || report.treatmentNarrative || report.synthesis || diagnosisReason || 'Detailed specialist assessment is being synthesized.';
 
-      // Section 2
-      const s2_title = report.section2_title || 'Holistic guidance and clinical protocol summary';
-      drawNarrativeBlock(s2_title, report.section2_content || report.integrationNote || 'Standard clinical guidance applies.');
+      drawNarrativeBlock(s1_title, s1_body);
+
+      // --- Block 2: The Actionable/Technical Protocol ---
+      const s2_title = report.section2_title || (
+        normalizedType === 'Master Report' ? 'Holistic Clinical Protocol' :
+          normalizedType === 'Treatment Plan Report' ? 'Therapeutic Recommendations' :
+            normalizedType === 'Lifestyle Report' ? 'Structured Daily Routine' :
+              normalizedType === 'Risk Report' ? 'Risk Mitigation & Outlook' :
+                'Holistic Guidance & Clinical Protocol'
+      );
+
+      const s2_body = report.section2_content ||
+        report.clinical_protocol ||
+        report.remedies ||
+        report.routine_steps ||
+        report.prognosis ||
+        report.red_flags ||
+        report.technical_notes ||
+        report.integrationNote ||
+        'Clinical guidance and standardized protocol apply.';
+
+      drawNarrativeBlock(s2_title, s2_body);
     }
 
     // (Drawing radar chart and breakdown if info is available)

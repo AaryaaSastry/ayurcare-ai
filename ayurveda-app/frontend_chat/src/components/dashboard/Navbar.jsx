@@ -4,20 +4,20 @@ import { useNavigate } from 'react-router-dom';
 
 const Navbar = ({ patientName }) => {
   const navigate = useNavigate();
-  const [avatar, setAvatar] = useState('');
+  const [profileImage, setProfileImage] = useState('');
 
   useEffect(() => {
-    const checkAvatar = () => {
+    const checkProfileImage = () => {
       const userData = localStorage.getItem('user');
       if (userData) {
         const parsed = JSON.parse(userData);
-        setAvatar(parsed.avatar || '');
+        setProfileImage(parsed.profileImage || '');
       }
     };
     
-    checkAvatar();
-    window.addEventListener('storage', checkAvatar);
-    return () => window.removeEventListener('storage', checkAvatar);
+    checkProfileImage();
+    window.addEventListener('storage', checkProfileImage);
+    return () => window.removeEventListener('storage', checkProfileImage);
   }, []);
 
   return (
@@ -34,8 +34,8 @@ const Navbar = ({ patientName }) => {
                <span className="text-xs font-bold text-slate-500 tracking-tight">Clinical Profile</span>
             </div>
             <div className="w-11 h-11 rounded-[16px] bg-[#f8faf9] border-2 border-gray-100 flex items-center justify-center text-ayur-forest shadow-sm group-hover:border-ayur-forest/20 transition-all group-hover:shadow-md relative overflow-hidden">
-               {avatar ? (
-                 <img src={avatar} alt="Profile" className="w-full h-full object-cover" />
+               {profileImage ? (
+                 <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />
                ) : (
                  <User size={22} strokeWidth={2.5} />
                )}

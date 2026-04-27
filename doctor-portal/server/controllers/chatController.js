@@ -249,6 +249,9 @@ const mapChatSummary = async (chatDoc, actor, unreadCount = 0, realtime = null) 
   const counterpartUserId = isDoctorView
     ? String(user?._id || '')
     : String(doctor?.userId || '');
+  const counterpartProfileImage = isDoctorView
+    ? (user?.profileImage || '')
+    : (doctor?.basicInfo?.profileImage || '');
 
   return {
     _id: chatDoc._id,
@@ -257,6 +260,7 @@ const mapChatSummary = async (chatDoc, actor, unreadCount = 0, realtime = null) 
     participantName: counterpartName,
     participantLabel: isDoctorView ? 'USER' : 'DOCTOR',
     participantUserId: counterpartUserId,
+    participantProfileImage: counterpartProfileImage,
     participantIsOnline: realtime ? realtime.isUserOnline(counterpartUserId) : false,
     lastMessage: chatDoc.lastMessage || '',
     unreadCount,

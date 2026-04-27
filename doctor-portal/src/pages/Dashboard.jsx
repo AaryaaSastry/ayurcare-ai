@@ -554,8 +554,12 @@ const Dashboard = () => {
                     {dailySchedule.length > 0 ? (
                       <div className="mt-8 flex flex-col h-full">
                         <div className="flex items-center gap-5 mb-8">
-                          <div className="h-20 w-20 bg-white/10 rounded-3xl flex items-center justify-center backdrop-blur shadow-inner ring-1 ring-white/10">
-                            <User className="h-10 w-10 text-white opacity-90" />
+                          <div className="h-20 w-20 bg-white/10 rounded-3xl flex items-center justify-center backdrop-blur shadow-inner ring-1 ring-white/10 overflow-hidden">
+                            {dailySchedule[0].patientId?.profileImage ? (
+                               <img src={dailySchedule[0].patientId.profileImage} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                               <User className="h-10 w-10 text-white opacity-90" />
+                            )}
                           </div>
                           <div>
                             <h3 className="text-xl font-black tracking-tight">{getPatientName(dailySchedule[0])}</h3>
@@ -649,8 +653,12 @@ const Dashboard = () => {
                     </div>
 
                     <div className="flex items-center gap-5 flex-1 cursor-pointer">
-                      <div className="h-14 w-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                        <User className="h-7 w-7 text-indigo-500" />
+                      <div className="h-14 w-14 rounded-2xl bg-indigo-50 flex items-center justify-center overflow-hidden">
+                        {apt.patientId?.profileImage ? (
+                           <img src={apt.patientId.profileImage} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                           <User className="h-7 w-7 text-indigo-500" />
+                        )}
                       </div>
                       <div className="flex flex-col">
                         <h4 className="text-base font-black text-slate-900 truncate max-w-[200px]">{getPatientName(apt)}</h4>
@@ -710,8 +718,12 @@ const Dashboard = () => {
           {/* DOCTOR PROFILE SIDE OVERVIEW */}
           <div className="lg:col-span-1 space-y-8">
             <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 text-center">
-              <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-primary-500 to-indigo-700 flex items-center justify-center mb-6 shadow-xl mx-auto rotate-3 hover:rotate-0 transition-transform">
-                <User className="h-12 w-12 text-white" />
+              <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-primary-500 to-indigo-700 flex items-center justify-center mb-6 shadow-xl mx-auto rotate-3 hover:rotate-0 transition-transform overflow-hidden">
+                {doctorData?.basicInfo?.profileImage ? (
+                   <img src={doctorData.basicInfo.profileImage} alt="" className="w-full h-full object-cover" />
+                ) : (
+                   <User className="h-12 w-12 text-white" />
+                )}
               </div>
               <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-1">{doctorData?.basicInfo?.name}</h3>
               <p className="text-primary-600 text-[10px] font-black uppercase tracking-widest mb-8 bg-primary-50 w-fit mx-auto px-4 py-1.5 rounded-full border border-primary-100">{doctorData?.professionalInfo?.specialization}</p>

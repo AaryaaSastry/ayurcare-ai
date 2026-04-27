@@ -11,7 +11,7 @@ const Profile = () => {
     email: '',
     phone: '',
     address: '',
-    avatar: ''
+    profileImage: ''
   });
 
   useEffect(() => {
@@ -28,7 +28,7 @@ const Profile = () => {
             email: userData.email || '',
             phone: userData.phone || '',
             address: userData.address || '',
-            avatar: userData.avatar || ''
+            profileImage: userData.profileImage || ''
           });
           localStorage.setItem('user', JSON.stringify(userData));
         }
@@ -49,7 +49,7 @@ const Profile = () => {
         name: profile.name || '',
         phone: profile.phone || '',
         address: profile.address || '',
-        avatar: profile.avatar || ''
+        profileImage: profile.profileImage || ''
       };
       const res = await patientApi.updateProfile(sanitizedProfile);
       localStorage.setItem('user', JSON.stringify(res.data));
@@ -58,7 +58,7 @@ const Profile = () => {
         email: res.data.email || '',
         phone: res.data.phone || '',
         address: res.data.address || '',
-        avatar: res.data.avatar || ''
+        profileImage: res.data.profileImage || ''
       });
     } catch (err) {
       console.error('Failed to save profile:', err);
@@ -105,8 +105,8 @@ const Profile = () => {
                  <div className="absolute top-0 right-0 w-24 h-24 bg-ayur-sage/5 rounded-bl-[100px] -z-0"></div>
                  <div className="relative group/avatar">
                    <div className="w-40 h-40 rounded-[32px] bg-[#f4f7f6] p-1 border border-gray-100 shadow-inner relative flex items-center justify-center text-gray-400 mb-6 group-hover/avatar:scale-[1.02] transition-transform duration-500 ring-4 ring-white overflow-hidden">
-                      {profile.avatar ? (
-                        <img src={profile.avatar} alt="Profile" className="w-full h-full object-cover rounded-[28px]" />
+                      {profile.profileImage ? (
+                        <img src={profile.profileImage} alt="Profile" className="w-full h-full object-cover rounded-[28px]" />
                       ) : (
                         <User size={80} />
                       )}
@@ -114,17 +114,20 @@ const Profile = () => {
                    </div>
                    {isEditing && (
                      <label className="absolute bottom-4 right-2 w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center cursor-pointer shadow-lg hover:bg-emerald-600 transition-colors z-20">
-                       <Plus size={20} />
+                       <Activity size={20} />
                        <input 
                          type="file" 
                          className="hidden" 
                          accept="image/*"
-                         onChange={(e) => {
+                         onChange={async (e) => {
                            const file = e.target.files[0];
                            if (file) {
-                             const reader = new FileReader();
-                             reader.onloadend = () => setProfile({...profile, avatar: reader.result});
-                             reader.readAsDataURL(file);
+                             try {
+                               const res = await patientApi.uploadProfileImage(file);
+                               setProfile({...profile, profileImage: res.data.imageUrl});
+                             } catch (err) {
+                               alert("Upload failed: " + err.message);
+                             }
                            }
                          }}
                        />

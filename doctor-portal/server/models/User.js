@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema({
   height: { type: String },
   weight: { type: String },
   phone: { type: String },
+  profileImage: { type: String },
   isOnboarded: { type: Boolean, default: false },
   role: { type: String, enum: ['patient', 'doctor'], default: 'patient' },
   createdAt: { type: Date, default: Date.now }

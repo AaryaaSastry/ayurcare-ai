@@ -280,17 +280,18 @@ def _extract_json_object(text):
 
 def _extract_patient_info_from_history(history, dosha_profile):
     patient_info = {
-        "name": "",
-        "age": "",
-        "gender": "",
-        "height": "",
-        "weight": "",
-        "constitution": dosha_profile.get("dominant", "") if isinstance(dosha_profile, dict) else ""
+        "name": "Patient",
+        "age": "N/A",
+        "gender": "N/A",
+        "height": "N/A",
+        "weight": "N/A",
+        "constitution": dosha_profile.get("dominant", "Unknown") if isinstance(dosha_profile, dict) else "Unknown"
     }
 
+    # Pattern Map Improvements
     pattern_map = {
-        "age": r"(\d{1,3})\s*(?:years old|year old|yo|y/o)",
-        "height": r"(\d{2,3}\s*(?:cm|centimeters?|ft|feet|in|inch|inches|['\"]))",
+        "age": r"(\d{1,3})\s*(?:years? old|yo|y/o|years?)",
+        "height": r"(\d{1,2}'\d{1,2}\"?|\d{2,3}\s*(?:cm|centimeters?|ft|feet|in|inch|inches|['\"]))",
         "weight": r"(\d{2,3}\s*(?:kg|kilograms?|lbs?|pounds?))",
     }
 
@@ -301,23 +302,47 @@ def _extract_patient_info_from_history(history, dosha_profile):
         text = item.replace("User:", "").strip()
         lower = text.lower()
 
-        if not patient_info["gender"]:
-            if " female" in f" {lower}" or lower.startswith("female"):
+        # Gender
+        if patient_info["gender"] == "N/A":
+            if re.search(r"\b(?:female|woman|girl|lady)\b", lower):
                 patient_info["gender"] = "Female"
-            elif " male" in f" {lower}" or lower.startswith("male"):
+            elif re.search(r"\b(?:male|man|boy|gentleman)\b", lower):
                 patient_info["gender"] = "Male"
 
+        # Regex-based extraction
         for key, pattern in pattern_map.items():
-            if patient_info[key]:
+            if patient_info[key] != "N/A":
                 continue
             match = re.search(pattern, lower)
             if match:
                 patient_info[key] = match.group(1).strip()
 
-        if not patient_info["name"]:
-            name_match = re.search(r"(?:name\s*(?:is)?|i am|i'm)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", text)
+        # Name Extraction (More aggressive)
+        if patient_info["name"] == "Patient":
+            # Match "I am Rahul", "Name is Rahul", or just "Rahul, 25..."
+            name_match = re.search(r"(?:name\s*(?:is)?|i am|i'm)\s+([A-Z][a-z]+)", text)
             if name_match:
                 patient_info["name"] = name_match.group(1).strip()
+            elif re.match(r"^([A-Z][a-z]+),\s*\d+", text): # "Rahul, 25..."
+                patient_info["name"] = re.match(r"^([A-Z][a-z]+)", text).group(1).strip()
+
+    # AI Fallback for extraction if some fields are still missing
+    if patient_info["age"] == "N/A" or patient_info["gender"] == "N/A":
+        try:
+            extraction_prompt = (
+                "Extract patient details from this conversation history as JSON. "
+                "Return keys: name, age, gender, height, weight. If not found, use 'N/A'.\n"
+                f"History: {'; '.join(history[-6:])}"
+            )
+            ai_data = _extract_json_object(send(extraction_prompt, max_tokens=150))
+            if ai_data and isinstance(ai_data, dict):
+                for k in ["name", "age", "gender", "height", "weight"]:
+                    if patient_info.get(k) == "N/A" or patient_info.get(k) == "Patient":
+                        val = str(ai_data.get(k, "N/A"))
+                        if val.lower() != "n/a":
+                            patient_info[k] = val
+        except:
+            pass
 
     return patient_info
 
@@ -427,11 +452,19 @@ def _generate_specialist_report(report_type, title, persona, objective, schema, 
 
     report_obj = _extract_json_object(send(prompt, max_tokens=900))
     if isinstance(report_obj, dict):
+        # Normalize report type
         report_obj["reportType"] = _normalize_report_type(report_obj.get("reportType", report_type))
         report_obj["title"] = report_obj.get("title") or title
-        report_data = report_obj.get("reportData")
-        if isinstance(report_data, dict):
-            return report_obj
+        
+        # LENIENT CHECK: If the AI flattened the object (didn't use "reportData" key)
+        # we treat the whole object (minus meta keys) as reportData.
+        if "reportData" not in report_obj or not isinstance(report_obj["reportData"], dict):
+            # Extract everything except our meta keys into reportData
+            meta_keys = {"reportType", "title", "reportData"}
+            report_data = {k: v for k, v in report_obj.items() if k not in meta_keys}
+            report_obj["reportData"] = report_data
+            
+        return report_obj
 
     return {
         "reportType": report_type,
@@ -512,28 +545,41 @@ def _normalize_specialist_report(report_type, title, report_obj, symptoms, dosha
         }
         return {"reportType": report_type, "title": title, "reportData": report_data}
 
-    # Standard non-diagnosis specialty reports
-    # We omit kpis and pain_points here to move them exclusively to the Master Report
+    # Specialist reports might have data nested in 'reportData' or at the top level
+    src_data = src.get("reportData", {}) if isinstance(src.get("reportData"), dict) else src
+
     report_data = {
-        "content": _clean_text(src.get("content"), _clean_text(src.get("section1_content"), _clean_text(fallback.get("content", fallback.get("morningFlow", fallback.get("diseaseFormation", fallback.get("treatmentNarrative", fallback.get("currentAssessment")))))))),
+        "content": _clean_text(src_data.get("content") or src_data.get("section1_content") or src_data.get("analysis") or src_data.get("narrative"), "Specialist narrative prepared."),
     }
 
-    if report_type == "Root Cause Report":
-        report_data["technical_notes"] = _clean_text(src.get("technical_notes"), _clean_text(src.get("section2_content"), _clean_text(fallback.get("amaEvolution"))))
-    
+    if report_type == "Diagnosis Report":
+        report_data.update({
+            "diagnosis": src_data.get("diagnosis", {}),
+            "clinicalImpression": _clean_text(src_data.get("clinicalImpression") or src_data.get("clinical_impression")),
+            "supportingFindings": _listify_strings(src_data.get("supportingFindings") or src_data.get("supporting_findings")),
+            "doshaProfile": src_data.get("doshaProfile") or src_data.get("dosha_profile", {}),
+            "threatLevel": _clean_text(src_data.get("threatLevel") or src_data.get("threat_level"), "MODERATE"),
+            "kpis": _normalize_kpis(src_data.get("kpis") or src_data.get("master_kpis")),
+            "pain_points": _listify_strings(src_data.get("pain_points") or src_data.get("master_pain_points")),
+        })
+    elif report_type == "Root Cause Report":
+        report_data["technical_notes"] = _clean_text(src_data.get("technical_notes") or src_data.get("technicalNotes") or src_data.get("pathology_notes"))
     elif report_type == "Lifestyle Report":
-        report_data["routine_steps"] = _listify_strings(src.get("routine_steps")) or _listify_strings(src.get("section2_content")) or _listify_strings(fallback.get("integrationNote"))
-    
+        report_data["routine_steps"] = _listify_strings(src_data.get("routine_steps") or src_data.get("routineSteps") or src_data.get("lifestyle_steps"), max_items=8)
+        # Graphical timeline data
+        report_data["timeline"] = src_data.get("timeline") or {
+            "morning": "Wake up early and hydrate.",
+            "afternoon": "Maintain steady energy.",
+            "evening": "Wind down and relax.",
+            "night": "Rest in a quiet environment."
+        }
     elif report_type == "Treatment Plan Report":
-        report_data["remedies"] = _listify_strings(src.get("remedies")) or _listify_strings(src.get("section2_content")) or _listify_strings(fallback.get("foodApproach"))
-    
+        report_data["remedies"] = _listify_strings(src_data.get("remedies") or src_data.get("therapeutic_steps") or src_data.get("treatments"), max_items=8)
     elif report_type == "Risk Report":
-        report_data["prognosis"] = _clean_text(src.get("prognosis"), _clean_text(src.get("section2_content"), _clean_text(fallback.get("longTermForecast"))))
-        report_data["red_flags"] = _listify_strings(src.get("red_flags")) or _listify_strings(fallback.get("shortTermOutlook"))
+        report_data["prognosis"] = _clean_text(src_data.get("prognosis") or src_data.get("outlook"))
+        report_data["red_flags"] = _listify_strings(src_data.get("red_flags") or src_data.get("redFlags") or src_data.get("warnings"), max_items=5)
 
     return {"reportType": report_type, "title": title, "reportData": report_data}
-
-    return {"reportType": report_type, "title": title, "reportData": fallback}
 
 
 def _build_master_fallback(normalized_specialty_reports):
@@ -550,21 +596,19 @@ def _build_master_fallback(normalized_specialty_reports):
         diagnosis_name = _clean_text(diagnosis_obj.get("name"))
 
     integrated_parts = [
-        f"Primary Ayurvedic impression: {diagnosis_name}." if diagnosis_name else "",
+        f"Principal Clinical Impression: {diagnosis_name}." if diagnosis_name else "Detailed clinical assessment performed.",
         _clean_text(diagnosis_data.get("clinicalImpression")),
         _clean_text(root_data.get("content")),
-        _clean_text(risk_data.get("prognosis")),
+        "The metabolic and constitutional markers indicate a need for focused Ayurvedic intervention."
     ]
-    integrated_synthesis = " ".join([p for p in integrated_parts if p]).strip() or "Integrated synthesis prepared from specialist assessments."
+    integrated_synthesis = " ".join([p for p in integrated_parts if p]).strip() or "Comprehensive clinical synthesis prepared from multi-specialist assessment."
 
     protocol_lines = []
-    for step in _listify_strings(life_data.get("routine_steps"), max_items=5):
+    for step in _listify_strings(life_data.get("routine_steps"), max_items=6):
         protocol_lines.append(f"Lifestyle: {step}")
-    for remedy in _listify_strings(tx_data.get("remedies"), max_items=5):
+    for remedy in _listify_strings(tx_data.get("remedies"), max_items=6):
         protocol_lines.append(f"Therapeutics: {remedy}")
-    for flag in _listify_strings(risk_data.get("red_flags"), max_items=3):
-        protocol_lines.append(f"Watch for: {flag}")
-    clinical_protocol = " ".join(protocol_lines).strip() or "Follow structured daily routine, individualized therapeutics, and close symptom monitoring."
+    clinical_protocol = " ".join(protocol_lines).strip() or "Standardized Ayurvedic clinical protocol: Follow structured daily routine and individualized herbal support."
 
     master_kpis = _normalize_kpis(diagnosis_data.get("kpis"))
     if not master_kpis and diagnosis_name:
@@ -760,7 +804,7 @@ def get_next_question(symptoms, history):
         "Ask only 1 question at a time. Be specific and focused on clinical differentiation."
         "DO NOT USE ANY SANSKRIT TERMS. Use simple, clear language."
     )
-    
+
     response = send(prompt)
     if not response or len(response) < 5:
         return "Can you describe the timing or triggers of these symptoms?"
@@ -812,7 +856,7 @@ def diagnose(symptoms, history):
                 "persona": "Senior Ayurvedic Physician",
                 "objective": "Provide a high-density diagnostic overview with key clinical markers.",
                 "schema": "{ \"kpis\": [{\"label\": \"...\", \"value\": \"...\"}], \"pain_points\": [\"...\"], \"diagnosis\": { \"name\": \"...\", \"reasoning\": \"...\" }, \"clinicalImpression\": \"...\", \"supportingFindings\": [\"...\"], \"doshaProfile\": { \"vata\": 0, \"pitta\": 0, \"kapha\": 0, \"dominant\": \"...\", \"interpretation\": \"...\" }, \"threatLevel\": \"Low/Moderate/High\", \"symptomsReported\": [\"...\"] }",
-                "style_rules": "- Write ONLY 70-100 words max for the narrative sections.\n- Focus on generating 3-4 professional clinical KPIs (e.g., 'Metabolic Fire Intensity'). KPI values MUST be 1-3 words max (e.g., 'High', 'Severely Diminished').\n- Identify 3-5 specific 'pain_points' for the patient."
+                "style_rules": "- Write 100-150 words for the narrative sections to ensure deep clinical depth.\n- Generate 4-5 professional clinical KPIs (e.g., 'Metabolic Fire Intensity'). KPI values MUST be 1-3 words max (e.g., 'High', 'Severely Diminished').\n- Identify 5-8 specific 'pain_points' reflecting the user's reported symptoms."
             },
             {
                 "reportType": "Root Cause Report",
@@ -820,15 +864,15 @@ def diagnose(symptoms, history):
                 "persona": "Ayurvedic Pathology Expert",
                 "objective": "Explain disease formation and holistic guidance.",
                 "schema": "{ \"content\": \"...\", \"technical_notes\": \"...\" }",
-                "style_rules": "- content weight: 100-150 words.\n- technical_notes: 30-50 words max.\n- DO NOT include KPIs or pain points, as they are now consolidated in the Master Report."
+                "style_rules": "- content weight: 150-200 words of high-density clinical pathology analysis.\n- technical_notes: 40-60 words max explaining the Ayurvedic reasoning.\n- DO NOT include KPIs or pain points."
             },
             {
                 "reportType": "Lifestyle Report",
                 "title": "Daily Rhythm Script",
                 "persona": "Ayurvedic Lifestyle Coach",
-                "objective": "Provide a daily script and holistic guidance.",
-                "schema": "{ \"content\": \"...\", \"routine_steps\": [\"...\"] }",
-                "style_rules": "- content weight: 100-150 words.\n- routine_steps: 4-6 specific daily actions.\n- DO NOT include KPIs or pain points, as they are now consolidated in the Master Report."
+                "objective": "Design a graphical daily timeline and holistic routine.",
+                "schema": "{ \"content\": \"...\", \"routine_steps\": [\"...\"], \"timeline\": { \"morning\": \"...\", \"afternoon\": \"...\", \"evening\": \"...\", \"night\": \"...\" } }",
+                "style_rules": "- content weight: 100-150 words.\n- routine_steps: 4-6 specific daily actions.\n- timeline: Provide ONE powerful 5-8 word clinical action for each phase (morning, afternoon, evening, night).\n- DO NOT include KPIs or pain points."
             },
             {
                 "reportType": "Treatment Plan Report",
@@ -836,7 +880,7 @@ def diagnose(symptoms, history):
                 "persona": "Ayurvedic Pharmacist",
                 "objective": "Explain therapeutic strategy and holistic guidance.",
                 "schema": "{ \"content\": \"...\", \"remedies\": [\"...\"] }",
-                "style_rules": "- content weight: 100-150 words.\n- remedies: 3-5 specific herbs/treatments.\n- DO NOT include KPIs or pain points, as they are now consolidated in the Master Report."
+                "style_rules": "- content weight: 150-200 words of therapeutic strategy and guidance.\n- prognosis: 2-3 sentence technical summary.\n- red_flags: 3-5 specific clinical indicators to monitor.\n- DO NOT include KPIs or pain points."
             },
             {
                 "reportType": "Risk Report",
@@ -877,13 +921,15 @@ def diagnose(symptoms, history):
         # 2. Generate Master Synthesis using normalized specialist outputs
         master_prompt = (
             "You are the 'Chief Medical Synthesizer' for an Ayurvedic clinical team.\n"
-            "Your task is to consolidate the findings and recommendations from 5 specialists into a single, cohesive 'Master Report'.\n\n"
+            "Your task is to consolidate the findings and recommendations from 5 specialists into a single, cohesive, and HIGH-DENSITY 'Master Report'.\n\n"
             "SPECIALIST INPUTS:\n"
             f"{json.dumps(specialty_reports, ensure_ascii=False)}\n\n"
             "YOUR OBJECTIVE:\n"
-            "1. Resolve any contradictions between specialists.\n"
-            "2. Remove redundant phrasing while preserving all unique clinical value.\n"
-            "3. Synthesize a powerful, unified 'Integrated Synthesis' and a master 'Holistic Clinical Protocol'.\n\n"
+            "1. Resolve any contradictions between specialists with authoritative clinical judgment.\n"
+            "2. Eliminate fluff. Every sentence must provide unique clinical value or guidance.\n"
+            "3. Synthesize a powerful 'Integrated Synthesis' (200-250 words) that connects the root cause to current symptoms.\n"
+            "4. Create a master 'Holistic Clinical Protocol' (150-200 words) that is actionable and specific.\n"
+            "5. Generate 5-6 'High-Impact Clinical KPIs' that quantify the patient's state (e.g., 'Ama Accumulation Index', 'Ojas Vitality Score').\n\n"
             "Return ONLY valid JSON with this exact top-level shape:\n"
             "{\n"
             '  "reportType": "Master Report",\n'

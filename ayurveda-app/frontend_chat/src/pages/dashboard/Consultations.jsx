@@ -69,6 +69,13 @@ const Consultations = () => {
         return;
       }
       if (report.reportData && typeof report.reportData === 'object') {
+        if (Array.isArray(report.reportData.reports)) {
+          const normalizedFromBundle = normalizeReports(report.reportData);
+          if (normalizedFromBundle.length > 0) {
+            setFullReportData(normalizedFromBundle);
+            return;
+          }
+        }
         setFullReportData([
           {
             reportType: report.reportType || 'Diagnosis Report',
@@ -130,6 +137,15 @@ const Consultations = () => {
     return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
   });
 
+  const displayedReports = sortedReports.reduce((acc, report) => {
+    const groupingKey = report.sessionId ? String(report.sessionId) : String(report._id);
+    if (!acc.seen.has(groupingKey)) {
+      acc.seen.add(groupingKey);
+      acc.items.push(report);
+    }
+    return acc;
+  }, { seen: new Set(), items: [] }).items;
+
   return (
     <div className="h-full overflow-y-auto custom-scrollbar px-4 sm:px-6 md:px-8 lg:px-12 py-8">
       <div className="max-w-[1240px] mx-auto space-y-8 pb-20">
@@ -190,11 +206,11 @@ const Consultations = () => {
           )
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sortedReports.map(report => (
+            {displayedReports.map(report => (
               <ReportCard key={report._id} report={report} onView={() => openReportDrawer(report)} onDelete={handleDeleteReport} isListView={false} />
             ))}
 
-            {sortedReports.length === 0 && (
+            {displayedReports.length === 0 && (
               <div className="col-span-full py-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[48px] flex flex-col items-center justify-center text-center space-y-4 animate-fade-in shadow-inner">
                 <FileText size={64} className="text-slate-200" />
                 <h3 className="text-2xl font-bold text-slate-900">No Reports Found</h3>
@@ -208,11 +224,11 @@ const Consultations = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {sortedReports.map(report => (
+            {displayedReports.map(report => (
               <ReportCard key={report._id} report={report} onView={() => openReportDrawer(report)} onDelete={handleDeleteReport} isListView={true} />
             ))}
 
-            {sortedReports.length === 0 && (
+            {displayedReports.length === 0 && (
               <div className="py-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[48px] flex flex-col items-center justify-center text-center space-y-4 animate-fade-in shadow-inner">
                 <FileText size={64} className="text-slate-200" />
                 <h3 className="text-2xl font-bold text-slate-900">No Reports Found</h3>

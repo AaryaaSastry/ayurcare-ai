@@ -13,6 +13,17 @@ const ReportCard = ({ report, onView, onDelete, isListView = false }) => {
     if (downloading) return;
     setDownloading(true);
     try {
+      if (report.reportData && typeof report.reportData === 'object' && Array.isArray(report.reportData.reports)) {
+        report.reportData.reports.forEach((item) => {
+          if (item?.reportData && typeof item.reportData === 'object') {
+            downloadMedicalReportPDF(item.reportData, {
+              reportType: item.reportType,
+              reportTitle: item.title || item.reportType
+            });
+          }
+        });
+        return;
+      }
       if (report.reportData && typeof report.reportData === 'object') {
         downloadMedicalReportPDF(report.reportData, {
           reportType: report.reportType,

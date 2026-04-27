@@ -229,6 +229,36 @@ export const doctorService = {
     } catch (err) {
       return false;
     }
+  },
+
+  // Upload Profile Image
+  uploadProfileImage: async (file) => {
+    const token = localStorage.getItem('token');
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch(`${API_URL}/upload-profile-image`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Image upload failed');
+      
+      // Update local storage if needed
+      const user = JSON.parse(localStorage.getItem('user'));
+      if (user) {
+        user.profileImage = data.imageUrl;
+        localStorage.setItem('user', JSON.stringify(user));
+      }
+
+      return { success: true, imageUrl: data.imageUrl };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   }
 };
 
