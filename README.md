@@ -6,6 +6,8 @@ This repository contains three main parts of the AyurCare platform:
 - `ayurveda-app/frontend_chat`: Patient-facing frontend (React + Vite)
 - `doctor-portal`: Doctor-facing frontend (React + Vite) and Node backend
 
+The patient chat now includes browser-native voice input and read-aloud support. The backend remains text-in/text-out; speech is handled in the frontend with Web Speech APIs.
+
 ## Repository Structure
 
 ```text
@@ -53,6 +55,8 @@ python api_server.py
 
 Default local API host from code: `127.0.0.1:8000`.
 
+The backend endpoint used by the patient chat is `POST /ask`, with supporting session and report routes under `/api/chat/*`.
+
 ### 2. Doctor Backend (Node API)
 
 ```bash
@@ -77,6 +81,8 @@ npm install
 npm run dev
 ```
 
+The patient chat supports typing or speaking symptoms, and assistant/report responses can be read aloud in the browser.
+
 ## Build Commands
 
 ```bash
@@ -96,3 +102,4 @@ npm run build
   - `ayurveda-app/frontend_chat/README.md`
 - If you change APIs, keep frontend base URLs in sync.
 - In this environment, Vite build can fail with `spawn EPERM`; this is a local permission/runtime issue, not necessarily an app code issue.
+- The doctor portal README exists but is currently empty.
