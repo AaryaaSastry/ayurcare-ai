@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:5001/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
 /**
  * AUTH SERVICE
@@ -228,6 +228,29 @@ export const doctorService = {
       return response.ok;
     } catch (err) {
       return false;
+    }
+  },
+
+  uploadAppointmentAttachments: async (appointmentId, files, status = 'completed') => {
+    const token = localStorage.getItem('token');
+    try {
+      const formData = new FormData();
+      formData.append('status', status);
+      Array.from(files || []).forEach((file) => {
+        formData.append('files', file);
+      });
+
+      const response = await fetch(`${API_URL}/appointments/${appointmentId}/attachments`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+      if (!response.ok) throw new Error('Failed to upload attachments');
+      return await response.json();
+    } catch (err) {
+      return { success: false, error: err.message };
     }
   },
 

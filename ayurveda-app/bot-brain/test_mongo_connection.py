@@ -2,6 +2,10 @@ import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 from dotenv import load_dotenv
+try:
+    import certifi
+except Exception:
+    certifi = None
 
 load_dotenv()
 
@@ -11,12 +15,15 @@ async def test_mongo():
     
     try:
         # Try primary URI from .env
-        client = AsyncIOMotorClient(
-            uri,
-            serverSelectionTimeoutMS=5000,
-            tlsAllowInvalidCertificates=True,
-            directConnection=True
-        )
+        mongo_kwargs = {
+            "serverSelectionTimeoutMS": 5000,
+            "tlsAllowInvalidCertificates": True,
+            "directConnection": True,
+        }
+        if certifi is not None:
+            mongo_kwargs["tlsCAFile"] = certifi.where()
+
+        client = AsyncIOMotorClient(uri, **mongo_kwargs)
         await client.admin.command('ping')
         print("✅ SUCCESS: Connected to MongoDB Atlas via .env URI")
         return
@@ -27,7 +34,10 @@ async def test_mongo():
     print("\nTrying simplified connection...")
     try:
         simplified_uri = "mongodb+srv://doc-connect:doc-connect@doc-connect.mpev56u.mongodb.net/doctor_portal?retryWrites=true&w=majority&tlsAllowInvalidCertificates=true"
-        client_alt = AsyncIOMotorClient(simplified_uri, serverSelectionTimeoutMS=5000)
+        mongo_kwargs = {"serverSelectionTimeoutMS": 5000}
+        if certifi is not None:
+            mongo_kwargs["tlsCAFile"] = certifi.where()
+        client_alt = AsyncIOMotorClient(simplified_uri, **mongo_kwargs)
         await client_alt.admin.command('ping')
         print("✅ SUCCESS: Connected via simplified URI!")
     except Exception as e:

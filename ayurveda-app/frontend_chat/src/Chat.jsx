@@ -18,7 +18,11 @@ import {
   Activity,
   X,
   Sparkles,
-  ShieldCheck
+  ShieldCheck,
+  Mic,
+  MicOff,
+  Volume2,
+  Square
 } from 'lucide-react';
 import './report.css';
 import ReportRenderer from './ReportRenderer';
@@ -30,6 +34,7 @@ import { downloadMedicalReportPDF } from './utils/pdfExport';
 import { parseReportPayload, validateAndNormalizeV2Payload, validateAndNormalizeReportList } from './utils/reportPayload';
 import { chatApi } from './services/api';
 const Chat = () => {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const { sessionId: routeSessionId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -38,6 +43,9 @@ const Chat = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [speechError, setSpeechError] = useState('');
+  const [speakingMessageId, setSpeakingMessageId] = useState(null);
   const [activeSidePanel, setActiveSidePanel] = useState(null);
   const [panelWidth, setPanelWidth] = useState(480);
   const [diagnosisCompleted, setDiagnosisCompleted] = useState(false);
@@ -46,6 +54,8 @@ const Chat = () => {
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const speechSynthesisRef = useRef(null);
 
   const startResizingPanel = useCallback((e) => {
     e.preventDefault();
@@ -71,6 +81,249 @@ const Chat = () => {
   const userData = JSON.parse(localStorage.getItem('user') || '{}');
   const userId = userData.id || userData._id;
   const activeSession = sessions.find(s => s._id === (activeSessionId || routeSessionId));
+
+  const stopReadingAloud = useCallback(() => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    speechSynthesisRef.current = null;
+    setSpeakingMessageId(null);
+  }, []);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.onerror = null;
+      recognitionRef.current.onend = null;
+      recognitionRef.current.abort();
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  }, []);
+
+  const stripHtml = useCallback((html) => {
+    if (typeof document === 'undefined') {
+      return html || '';
+    }
+    const container = document.createElement('div');
+    container.innerHTML = html || '';
+    return (container.textContent || container.innerText || '').replace(/\s+/g, ' ').trim();
+  }, []);
+
+  const cleanSpeechValue = useCallback((value) => {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => cleanSpeechValue(item))
+        .filter(Boolean)
+        .join('. ');
+    }
+
+    if (value && typeof value === 'object') {
+      return Object.values(value)
+        .map((item) => cleanSpeechValue(item))
+        .filter(Boolean)
+        .join('. ');
+    }
+
+    return stripHtml(sanitizeMarkdownText(String(value || ''))).replace(/\s+/g, ' ').trim();
+  }, [stripHtml]);
+
+  const splitSpeechIntoChunks = useCallback((text, maxLength = 220) => {
+    const normalized = cleanSpeechValue(text);
+    if (!normalized) return [];
+    if (normalized.length <= maxLength) return [normalized];
+
+    const sentences = normalized
+      .split(/(?<=[.!?])\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (sentences.length <= 1) {
+      const chunks = [];
+      let buffer = '';
+      normalized.split(' ').forEach((word) => {
+        if ((buffer + ' ' + word).trim().length > maxLength) {
+          if (buffer.trim()) chunks.push(buffer.trim());
+          buffer = word;
+        } else {
+          buffer = buffer ? `${buffer} ${word}` : word;
+        }
+      });
+      if (buffer.trim()) chunks.push(buffer.trim());
+      return chunks;
+    }
+
+    const chunks = [];
+    let buffer = '';
+    sentences.forEach((sentence) => {
+      if ((buffer + ' ' + sentence).trim().length > maxLength) {
+        if (buffer.trim()) chunks.push(buffer.trim());
+        buffer = sentence;
+      } else {
+        buffer = buffer ? `${buffer} ${sentence}` : sentence;
+      }
+    });
+    if (buffer.trim()) chunks.push(buffer.trim());
+    return chunks;
+  }, [cleanSpeechValue]);
+
+  const buildReportSpeechSegments = useCallback((reportData) => {
+    if (!reportData || typeof reportData !== 'object') return '';
+
+    const segments = [];
+    const reportName = reportData?.diagnosis?.name || reportData?.name || reportData?.title || 'your report';
+    const pushSection = (label, content) => {
+      const body = cleanSpeechValue(content);
+      if (!body) return;
+      segments.push(`${label}. ${body}`);
+    };
+
+    const symptoms = reportData.symptomsReported || reportData.supportingFindings || reportData.pain_points || [];
+    const analysis = reportData.clinicalImpression || reportData.diagnosis?.reasoning || reportData.integrated_synthesis || reportData.section1_content;
+    const diagnosis = reportData.diagnosis?.name || reportData.diagnosis || reportData.title || reportName;
+    const treatments = reportData.treatmentNarrative || reportData.treatments || reportData.treatment_plan || reportData.clinical_protocol || reportData.section2_content;
+    const herbs = reportData.herbalPreparations || reportData.herbal_meds || reportData.medicinesAndSupports || reportData.herbal_medications || reportData.herbalMeds;
+    const closing = reportData.recoveryExpectation || reportData.finalClarity || reportData.prognosis || reportData.shortTermOutlook;
+
+    segments.push(`Here is the full review for ${reportName}.`);
+    pushSection('Symptoms', symptoms);
+    pushSection('Analysis', analysis);
+    pushSection('Diagnosis', diagnosis);
+    pushSection('Treatments', treatments);
+    pushSection('Herbs', herbs);
+    pushSection('Closing guidance', closing);
+
+    return segments;
+  }, [cleanSpeechValue]);
+
+  const speakSpeechSegments = useCallback((segments, messageId) => {
+    if (!window.speechSynthesis || !Array.isArray(segments) || segments.length === 0) return;
+
+    let index = 0;
+    const speakNext = () => {
+      if (index >= segments.length) {
+        stopReadingAloud();
+        return;
+      }
+
+      const chunk = segments[index++];
+      const utterance = new SpeechSynthesisUtterance(chunk);
+      utterance.lang = 'en-US';
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.onstart = () => setSpeakingMessageId(messageId);
+      utterance.onend = speakNext;
+      utterance.onerror = () => stopReadingAloud();
+      speechSynthesisRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
+    };
+
+    stopReadingAloud();
+    speakNext();
+  }, [stopReadingAloud]);
+
+  const readMessageAloud = useCallback((message) => {
+    if (!message?.text) return;
+    if (!window.speechSynthesis) {
+      setSpeechError('Text-to-speech is not supported in this browser.');
+      return;
+    }
+
+    const messageText = stripHtml(sanitizeMarkdownText(message.text));
+    if (!messageText) return;
+
+    const messageId = message._id || message.id || null;
+    if (speakingMessageId && speakingMessageId === messageId) {
+      stopReadingAloud();
+      return;
+    }
+
+    stopReadingAloud();
+    const utterance = new SpeechSynthesisUtterance(messageText);
+    utterance.lang = 'en-US';
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.onstart = () => setSpeakingMessageId(messageId);
+    utterance.onend = () => stopReadingAloud();
+    utterance.onerror = () => stopReadingAloud();
+    speechSynthesisRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }, [speakingMessageId, stopReadingAloud, stripHtml]);
+
+  const readReportAloud = useCallback((reportData, messageId) => {
+    if (!window.speechSynthesis) {
+      setSpeechError('Text-to-speech is not supported in this browser.');
+      return;
+    }
+
+    const segments = buildReportSpeechSegments(reportData)
+      .flatMap((segment) => splitSpeechIntoChunks(segment, 220));
+
+    if (!segments.length) return;
+    speakSpeechSegments(segments, messageId);
+  }, [buildReportSpeechSegments, speakSpeechSegments, splitSpeechIntoChunks]);
+
+  const startVoiceInput = useCallback(() => {
+    if (!SpeechRecognition) {
+      setSpeechError('Voice input is not supported in this browser.');
+      return;
+    }
+
+    if (isListening) {
+      stopListening();
+      return;
+    }
+
+    setSpeechError('');
+    stopReadingAloud();
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      let transcript = '';
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        transcript += event.results[i][0].transcript;
+      }
+      const trimmed = transcript.trim();
+      if (trimmed) {
+        setInput(trimmed);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      const error = event?.error || 'Speech recognition error';
+      setSpeechError(error === 'not-allowed'
+        ? 'Microphone permission was denied.'
+        : 'Could not understand the voice input. Please try again.');
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    setIsListening(true);
+
+    try {
+      recognition.start();
+    } catch (_err) {
+      setSpeechError('Unable to start microphone input right now.');
+      setIsListening(false);
+      recognitionRef.current = null;
+    }
+  }, [SpeechRecognition, isListening, stopListening, stopReadingAloud]);
+
+  useEffect(() => () => {
+    stopListening();
+    stopReadingAloud();
+  }, [stopListening, stopReadingAloud]);
 
   const normalizeReports = (payload) => validateAndNormalizeV2Payload(payload);
 
@@ -211,7 +464,16 @@ const Chat = () => {
       setSessions(prev => [newSess, ...prev]);
       navigate(`/chat/${newSess._id}`, { replace: true, state: {} });
       window.dispatchEvent(new CustomEvent('refresh-sessions'));
-    } catch (_err) { }
+    } catch (err) {
+      setSessions(prev => prev.map(s => s._id === sessId ? {
+        ...s,
+        messages: s.messages.slice(0, -1).concat({
+          role: 'bot',
+          text: 'I could not reach the assistant right now. Please try again.'
+        })
+      } : s));
+      console.error('Chat send failed:', err);
+    }
     finally { setIsLoading(false); }
   };
 
@@ -424,8 +686,11 @@ const Chat = () => {
                 </div>
               </div>
             ) : (
-              activeSession?.messages?.map((msg, idx) => (
-                <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`}>
+              activeSession?.messages?.map((msg, idx) => {
+                const messageId = msg._id || msg.id || idx;
+
+                return (
+                <div key={messageId} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`}>
                   {msg.role === 'report' ? (
                     (() => {
                         const payload = parseReportPayload(msg.text);
@@ -441,9 +706,19 @@ const Chat = () => {
                                     <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
                                       <ShieldCheck size={28} strokeWidth={2} />
                                     </div>
-                                    <div>
-                                      <h4 className="text-lg font-bold text-slate-900 tracking-tight">Clinical Report Prepared</h4>
-                                      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mt-0.5">Biological Synthesis Verified</p>
+                                    <div className="flex-1 flex items-start justify-between gap-3">
+                                      <div>
+                                        <h4 className="text-lg font-bold text-slate-900 tracking-tight">Clinical Report Prepared</h4>
+                                        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mt-0.5">Biological Synthesis Verified</p>
+                                      </div>
+                                      <button
+                                        onClick={() => readReportAloud(primaryReport, `report-${messageId}`)}
+                                        className="inline-flex items-center justify-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-all active:scale-95"
+                                        title="Read full report aloud"
+                                      >
+                                        <Volume2 size={11} />
+                                        <span>Read full review</span>
+                                      </button>
                                     </div>
                                   </div>
 
@@ -519,6 +794,19 @@ const Chat = () => {
                           <span className={`text-[10px] font-black uppercase tracking-widest ${msg.role === 'user' ? 'text-slate-400' : 'text-emerald-500'}`}>
                             {msg.role === 'user' ? `User ${userId?.toString().slice(-4) || '1'}` : `Doc AI`}
                           </span>
+                          {msg.role === 'bot' && !msg.isThinking && (
+                            <button
+                              onClick={() => readMessageAloud({ ...msg, _id: messageId })}
+                              className={`inline-flex items-center justify-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold transition-all active:scale-95 ${speakingMessageId === messageId
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                                }`}
+                              title={speakingMessageId === messageId ? 'Stop reading aloud' : 'Read aloud'}
+                            >
+                              {speakingMessageId === messageId ? <Square size={11} /> : <Volume2 size={11} />}
+                              <span>{speakingMessageId === messageId ? 'Stop' : 'Read'}</span>
+                            </button>
+                          )}
                         </div>
                         <div className={`rounded-[22px] text-[15px] leading-relaxed font-normal shadow-sm max-w-full overflow-hidden ${msg.role === 'user'
                           ? 'bg-slate-100 text-slate-900 border-2 border-transparent rounded-tr-none px-6 py-4.5'
@@ -540,7 +828,8 @@ const Chat = () => {
                     </div>
                   )}
                 </div>
-              ))
+                );
+              })
             )}
             <div ref={messagesEndRef} />
           </div>
@@ -563,6 +852,17 @@ const Chat = () => {
                   disabled={isMessagesLoading}
                 />
                 <button
+                  onClick={startVoiceInput}
+                  disabled={isMessagesLoading}
+                  className={`mr-2 w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 border-2 ${isListening
+                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-xl scale-100'
+                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                  title={isListening ? 'Stop listening' : 'Use microphone'}
+                >
+                  {isListening ? <MicOff size={20} strokeWidth={2.5} /> : <Mic size={20} strokeWidth={2.5} />}
+                </button>
+                <button
                   onClick={handleSend}
                   disabled={isLoading || !input.trim() || isMessagesLoading}
                   className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 border-2 ${input.trim() ? 'bg-black border-black text-white shadow-xl scale-100' : 'bg-gray-50 text-gray-200 border-gray-100 scale-95 opacity-50 cursor-not-allowed'}`}
@@ -570,6 +870,11 @@ const Chat = () => {
                   {isLoading ? <Loader2 size={16} strokeWidth={2.5} className="animate-spin text-white" /> : <Send size={20} strokeWidth={2.5} />}
                 </button>
               </div>
+              {(speechError || isListening) && (
+                <div className={`mt-3 px-4 text-[11px] font-semibold ${speechError ? 'text-rose-500' : 'text-emerald-600'}`}>
+                  {speechError || 'Listening... speak naturally, then tap the mic again or send the text.'}
+                </div>
+              )}
             </div>
           </div>
         </div>

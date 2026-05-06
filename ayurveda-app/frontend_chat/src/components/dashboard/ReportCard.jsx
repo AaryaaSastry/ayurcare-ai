@@ -13,12 +13,28 @@ const ReportCard = ({ report, onView, onDelete, isListView = false }) => {
     if (downloading) return;
     setDownloading(true);
     try {
+      let sessionData = null;
+      if (report.sessionId) {
+        const res = await chatApi.getSession(report.sessionId);
+        sessionData = res.data;
+      }
+
+      const resolvePatientInfo = (fallbackPatientInfo = {}) => {
+        const source = report.reportData?.patientInfo || sessionData?.patientInfo || report.patientInfo || fallbackPatientInfo || {};
+        return {
+          ...source,
+          name: source.name || source.fullName || sessionData?.patientName || sessionData?.name || report.patientName || report.name || 'Patient',
+        };
+      };
+
       if (report.reportData && typeof report.reportData === 'object' && Array.isArray(report.reportData.reports)) {
+        const bundlePatientInfo = resolvePatientInfo(report.reportData.patientInfo);
         report.reportData.reports.forEach((item) => {
           if (item?.reportData && typeof item.reportData === 'object') {
             downloadMedicalReportPDF(item.reportData, {
               reportType: item.reportType,
-              reportTitle: item.title || item.reportType
+              reportTitle: item.title || item.reportType,
+              patientInfo: item.reportData.patientInfo || bundlePatientInfo,
             });
           }
         });
@@ -27,13 +43,12 @@ const ReportCard = ({ report, onView, onDelete, isListView = false }) => {
       if (report.reportData && typeof report.reportData === 'object') {
         downloadMedicalReportPDF(report.reportData, {
           reportType: report.reportType,
-          reportTitle: report.reportTitle || report.reportType
+          reportTitle: report.reportTitle || report.reportType,
+          patientInfo: resolvePatientInfo(report.reportData.patientInfo),
         });
         return;
       }
       if (report.sessionId) {
-        const res = await chatApi.getSession(report.sessionId);
-        const sessionData = res.data;
         const payload = parseReportPayload(sessionData.diagnosis);
         const normalized = validateAndNormalizeV2Payload(payload);
         if (!normalized.valid) {
@@ -45,7 +60,7 @@ const ReportCard = ({ report, onView, onDelete, isListView = false }) => {
           const diagObj = match.reportData;
           downloadMedicalReportPDF({
             ...diagObj,
-            patientInfo: diagObj.patientInfo || sessionData.patientInfo || { name: 'Patient' },
+            patientInfo: diagObj.patientInfo || resolvePatientInfo(),
             symptomsReported: diagObj.symptomsReported || diagObj.findings || [],
             dietaryGuide: diagObj.dietaryGuide || {},
             lifestyleChanges: diagObj.lifestyleChanges || diagObj.lifestyle_changes || [],

@@ -20,12 +20,15 @@ const { registerChatSocket } = require('./sockets/chatSocket');
 
 const app = express();
 const server = http.createServer(app);
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 const JWT_SECRET = process.env.JWT_SECRET || 'doctor_portal_secret_key_123';
 const JWT_FALLBACK_SECRETS = ['doctor_portal_secret_key_123'].filter((secret) => secret !== JWT_SECRET);
 
-// CLOUD URI - Hardcoded to ensure connection
-const MONGODB_URI = 'mongodb+srv://doc-connect:doc-connect@doc-connect.mpev56u.mongodb.net/doctor_portal?retryWrites=true&w=majority&appName=doc-connect';
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+
+if (!MONGODB_URI) {
+  throw new Error('MONGODB_URI environment variable is required');
+}
 
 // Middleware
 app.use(cors());
@@ -147,6 +150,22 @@ const buildJitsiRoom = (appointmentId) => {
 };
 
 const buildJitsiLink = (roomId) => `https://meet.jit.si/${encodeURIComponent(roomId)}#config.prejoinPageEnabled=false`;
+
+const findOwnedAppointment = async (appointmentId, userId) => {
+  const appointment = await Appointment.findById(appointmentId);
+  if (!appointment) return null;
+
+  if (appointment.patientId?.toString() === userId) {
+    return appointment;
+  }
+
+  const doctor = await Doctor.findOne({ userId }).select('_id');
+  if (doctor && appointment.doctorId?.toString() === doctor._id.toString()) {
+    return appointment;
+  }
+
+  return null;
+};
 
 // ─── HEALTH CHECK (No auth required) ───
 app.get('/api/health', (req, res) => {
@@ -577,6 +596,10 @@ app.post('/api/doctor/prescription/draft', authenticateToken, async (req, res) =
       { upsert: true, new: true }
     );
 
+    appointment.notes = String(notes || '');
+    appointment.updatedAt = new Date();
+    await appointment.save();
+
     res.json(draft);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -623,6 +646,8 @@ app.post('/api/doctor/prescription/finalize', authenticateToken, async (req, res
     );
 
     appointment.prescriptionId = prescription._id;
+    appointment.status = 'completed';
+    appointment.notes = String(notes || '');
     appointment.consultationCompleted = true;
     appointment.meetingStatus = 'ended';
     appointment.endedAt = finalizedAt;
@@ -662,9 +687,13 @@ app.get('/api/patient/prescription/:appointmentId', authenticateToken, async (re
 
 app.patch('/api/appointments/:id', authenticateToken, async (req, res) => {
   try {
-    const updateData = { ...req.body, updatedAt: Date.now() };
-    const appointment = await Appointment.findByIdAndUpdate(req.params.id, updateData, { new: true });
-    res.json(appointment);
+    const appointment = await findOwnedAppointment(req.params.id, req.userId);
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+
+    const { doctorId, patientId, prescriptionId, createdAt, _id, ...mutableUpdateData } = req.body || {};
+    const updateData = { ...mutableUpdateData, updatedAt: Date.now() };
+    const updatedAppointment = await Appointment.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
+    res.json(updatedAppointment);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -673,8 +702,52 @@ app.patch('/api/appointments/:id', authenticateToken, async (req, res) => {
 app.patch('/api/appointments/:id/status', authenticateToken, async (req, res) => {
   try {
     const { status } = req.body;
-    const appointment = await Appointment.findByIdAndUpdate(req.params.id, { status }, { new: true });
-    res.json(appointment);
+    const appointment = await findOwnedAppointment(req.params.id, req.userId);
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+
+    const updatedAppointment = await Appointment.findByIdAndUpdate(req.params.id, { status, updatedAt: Date.now() }, { new: true, runValidators: true });
+    res.json(updatedAppointment);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/appointments/:id/attachments', authenticateToken, upload.array('files', 10), async (req, res) => {
+  try {
+    const doctor = await Doctor.findOne({ userId: req.userId }).select('_id');
+    if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
+
+    const appointment = await Appointment.findOne({ _id: req.params.id, doctorId: doctor._id });
+    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+
+    const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+    const fileAttachments = uploadedFiles.map((file) => ({
+      originalName: file.originalname,
+      fileName: file.filename,
+      mimeType: file.mimetype,
+      size: file.size,
+      url: `${req.protocol}://${req.get('host')}/uploads/${file.filename}`,
+      uploadedAt: new Date(),
+    }));
+
+    const nextStatus = String(req.body.status || '').toLowerCase().trim();
+    if (nextStatus === 'completed') {
+      appointment.status = 'completed';
+      appointment.consultationCompleted = true;
+      appointment.meetingStatus = 'ended';
+      appointment.endedAt = new Date();
+    } else if (nextStatus === 'cancelled' || nextStatus === 'canceled') {
+      appointment.status = 'cancelled';
+      appointment.consultationCompleted = false;
+      appointment.meetingStatus = 'ended';
+      appointment.endedAt = new Date();
+    }
+
+    appointment.attachments = [...(appointment.attachments || []), ...fileAttachments];
+    appointment.updatedAt = new Date();
+    await appointment.save();
+
+    res.json({ success: true, appointment, attachments: fileAttachments });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

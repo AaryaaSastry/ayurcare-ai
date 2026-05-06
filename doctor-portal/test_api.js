@@ -1,9 +1,11 @@
-const id = "69ca19dc97eed95c49fdbf52";
-fetch(`http://localhost:5000/api/appointments/${id}`, {
+const baseUrl = process.env.API_BASE_URL || 'http://localhost:5001/api';
+const id = process.env.APPOINTMENT_ID || '69ca19dc97eed95c49fdbf52';
+
+fetch(`${baseUrl}/appointments/${id}`, {
   method: 'PATCH',
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OWNhMGJlOGRlNTRkNmY4MGEyMDJiMDUiLCJpYXQiOjE3NzQ4NTE5NjUsImV4cCI6MTc3NTQ1Njc2NX0.IVW3KTLSUgOYjwDODSl-8VyVn0WMJ-a6D0Jb9iSd3-0'
+    'Authorization': process.env.AUTH_TOKEN || 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OWNhMGJlOGRlNTRkNmY4MGEyMDJiMDUiLCJpYXQiOjE3NzQ4NTE5NjUsImV4cCI6MTc3NTQ1Njc2NX0.IVW3KTLSUgOYjwDODSl-8VyVn0WMJ-a6D0Jb9iSd3-0'
   },
   body: JSON.stringify({
     status: 'confirmed',

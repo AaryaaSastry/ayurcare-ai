@@ -9,6 +9,10 @@ import json
 import os
 import asyncio
 from dotenv import load_dotenv
+try:
+    import certifi
+except Exception:
+    certifi = None
 from bot import (
     extract_symptoms_from_text,
     get_next_question,
@@ -51,12 +55,14 @@ async def startup():
     global mongo_client, db
     try:
         print(f"⏳ Connecting to MongoDB Atlas: {MONGODB_URI[:25]}...")
+        mongo_kwargs = {
+            "serverSelectionTimeoutMS": 10000,
+            "connectTimeoutMS": 15000,
+        }
+        if certifi is not None:
+            mongo_kwargs["tlsCAFile"] = certifi.where()
         
-        mongo_client = AsyncIOMotorClient(
-            MONGODB_URI,
-            serverSelectionTimeoutMS=10000,
-            connectTimeoutMS=15000
-        )
+        mongo_client = AsyncIOMotorClient(MONGODB_URI, **mongo_kwargs)
         
         # Test connection
         await mongo_client.admin.command('ping')
@@ -93,12 +99,15 @@ async def ensure_db_connected():
         else:
             connection_string += "&"
         connection_string += "tlsAllowInvalidCertificates=true"
+
+        mongo_kwargs = {
+            "serverSelectionTimeoutMS": 5000,
+            "connectTimeoutMS": 10000,
+        }
+        if certifi is not None:
+            mongo_kwargs["tlsCAFile"] = certifi.where()
         
-        mongo_client = AsyncIOMotorClient(
-            connection_string,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=10000
-        )
+        mongo_client = AsyncIOMotorClient(connection_string, **mongo_kwargs)
         
         await asyncio.wait_for(mongo_client.admin.command('ping'), timeout=5)
         db = mongo_client["doctor_portal"]

@@ -32,6 +32,20 @@ export async function downloadMedicalReportPDF(report, options = {}) {
       ? 'Risk Report'
       : (options.reportType || report.reportType || 'Diagnosis Report')
 
+    const resolvePatientName = (value) => {
+      const candidates = [
+        value?.patientInfo?.name,
+        value?.patientInfo?.fullName,
+        value?.patientName,
+        value?.patient_name,
+        value?.name,
+      ]
+
+      return candidates.find((item) => typeof item === 'string' && item.trim())?.trim() || 'Patient'
+    }
+
+    const patientName = resolvePatientName(report)
+
     const getDoshaPercentage = (doshaStr = "", type = "vata") => {
       const lowerStr = doshaStr.toLowerCase();
       if (lowerStr.includes('vata') && lowerStr.includes('pitta')) {
@@ -425,14 +439,14 @@ export async function downloadMedicalReportPDF(report, options = {}) {
     doc.setDrawColor(GOLD_MID[0], GOLD_MID[1], GOLD_MID[2]); doc.setLineWidth(0.8);
     doc.circle(avatarX, avatarY, 9, 'S');
 
-    const initials = (report.patientInfo?.name || 'PT').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    const initials = patientName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
     doc.setTextColor(GOLD_MID[0], GOLD_MID[1], GOLD_MID[2]);
     doc.text(initials, avatarX, avatarY + 3.5, { align: 'center' });
 
     // Patient name in white
     doc.setFont('times', 'bold'); doc.setFontSize(9); doc.setTextColor(240, 238, 230);
-    doc.text(report.patientInfo?.name || 'Patient', avatarX, panelTop + 28, { align: 'center', maxWidth: LEFT_W - 6 });
+    doc.text(patientName, avatarX, panelTop + 28, { align: 'center', maxWidth: LEFT_W - 6 });
 
     // Gold thin separator
     doc.setDrawColor(GOLD[0], GOLD[1], GOLD[2]); doc.setLineWidth(0.3);

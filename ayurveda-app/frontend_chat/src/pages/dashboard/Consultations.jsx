@@ -27,21 +27,28 @@ const Consultations = () => {
     }
   };
 
-  const normalizeReports = (payload) => {
+  const normalizeReports = (payload, fallbackPatientInfo = {}) => {
     if (!payload) return [];
+    const patientInfo = payload.patientInfo || fallbackPatientInfo || {};
     if (payload.reports && Array.isArray(payload.reports)) {
       return payload.reports
         .filter(r => r && typeof r === 'object')
         .map(r => ({
           reportType: r.reportType || 'Diagnosis Report',
           title: r.title || r.reportType || 'Clinical Report',
-          reportData: r.reportData || {}
+          reportData: {
+            ...(r.reportData || {}),
+            patientInfo: r.reportData?.patientInfo || patientInfo,
+          }
         }));
     }
     return [{
       reportType: 'Diagnosis Report',
       title: 'Clinical Diagnosis',
-      reportData: payload
+      reportData: {
+        ...payload,
+        patientInfo,
+      }
     }];
   };
 
@@ -54,7 +61,7 @@ const Consultations = () => {
         const res = await chatApi.getSession(report.sessionId);
         const sessionData = res.data;
         const payload = extractReportPayload(sessionData.diagnosis);
-        const normalized = normalizeReports(payload);
+        const normalized = normalizeReports(payload, sessionData.patientInfo || {});
         if (normalized.length > 0) {
           setFullReportData(normalized);
         } else if (report.reportData && typeof report.reportData === 'object') {
@@ -62,7 +69,10 @@ const Consultations = () => {
             {
               reportType: report.reportType || 'Diagnosis Report',
               title: report.reportTitle || report.reportType || 'Clinical Report',
-              reportData: report.reportData
+              reportData: {
+                ...report.reportData,
+                patientInfo: report.reportData.patientInfo || sessionData.patientInfo || {},
+              }
             }
           ]);
         }
@@ -70,7 +80,7 @@ const Consultations = () => {
       }
       if (report.reportData && typeof report.reportData === 'object') {
         if (Array.isArray(report.reportData.reports)) {
-          const normalizedFromBundle = normalizeReports(report.reportData);
+          const normalizedFromBundle = normalizeReports(report.reportData, report.reportData.patientInfo || {});
           if (normalizedFromBundle.length > 0) {
             setFullReportData(normalizedFromBundle);
             return;
@@ -80,7 +90,10 @@ const Consultations = () => {
           {
             reportType: report.reportType || 'Diagnosis Report',
             title: report.reportTitle || report.reportType || 'Clinical Report',
-            reportData: report.reportData
+            reportData: {
+              ...report.reportData,
+              patientInfo: report.reportData.patientInfo || report.patientInfo || {},
+            }
           }
         ]);
       }

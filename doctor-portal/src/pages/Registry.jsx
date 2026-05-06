@@ -12,11 +12,15 @@ import {
   X,
   Video,
   Building2,
-  SlidersHorizontal
+  SlidersHorizontal,
+  CheckCircle2,
+  Trash2,
+  Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { downloadMedicalReportPDF } from '../utils/pdfExport';
+import AvailabilityScheduler from '../components/scheduling/AvailabilityScheduler';
 
 const parseDiagnosis = (content) => {
   if (!content) return [];
@@ -46,6 +50,25 @@ const parseDiagnosis = (content) => {
   }
 };
 
+const getDefaultScheduleForm = (apt) => {
+  const nextSlot = new Date();
+  nextSlot.setMinutes(nextSlot.getMinutes() + 30);
+  nextSlot.setSeconds(0, 0);
+
+  const pad = (value) => String(value).padStart(2, '0');
+  const defaultDate = `${nextSlot.getFullYear()}-${pad(nextSlot.getMonth() + 1)}-${pad(nextSlot.getDate())}`;
+  const defaultTime = `${pad(nextSlot.getHours())}:${pad(nextSlot.getMinutes())}`;
+
+  return {
+    date: defaultDate,
+    time: defaultTime,
+    duration: String(apt?.duration || 30),
+    type: apt?.type || 'clinic',
+    fee: apt?.fee != null ? String(apt.fee) : '',
+    notes: apt?.notes || '',
+  };
+};
+
 const Registry = () => {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -55,11 +78,22 @@ const Registry = () => {
   const [modeFilter, setModeFilter] = useState('all');
   const [apptTypeFilter, setApptTypeFilter] = useState('all');
   const [selectedAudit, setSelectedAudit] = useState(null);
+  const [doctorData, setDoctorData] = useState(null);
+  const [schedulingAppointment, setSchedulingAppointment] = useState(null);
+  const [scheduleForm, setScheduleForm] = useState(getDefaultScheduleForm(null));
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [completionMode, setCompletionMode] = useState(null);
+  const [completionFiles, setCompletionFiles] = useState([]);
+  const [completionSaving, setCompletionSaving] = useState(false);
   const now = new Date();
 
    const fetchData = async () => {
      try {
-       const apts = await doctorService.getAppointments();
+       const [profile, apts] = await Promise.all([
+         doctorService.getProfile(),
+         doctorService.getAppointments(),
+       ]);
+       setDoctorData(profile);
        setAppointments(apts);
      } catch (err) {
        console.error('Failed to fetch appointments', err);
@@ -119,6 +153,136 @@ const Registry = () => {
     });
   };
 
+  const openScheduleModal = (apt) => {
+    setSchedulingAppointment(apt);
+    setScheduleForm(getDefaultScheduleForm(apt));
+  };
+
+  const handleDeleteRequest = async (apt) => {
+    if (!apt?._id) return;
+    if (!window.confirm('Delete this pending request? This will mark it as cancelled.')) return;
+
+    try {
+      const success = await doctorService.updateAppointmentStatus(apt._id, 'cancelled');
+      if (success) {
+        if (selectedAudit?._id === apt._id) setSelectedAudit(null);
+        await fetchData();
+      } else {
+        alert('Unable to delete this request right now.');
+      }
+    } catch (err) {
+      console.error('Failed to delete request', err);
+      alert('Unable to delete this request right now.');
+    }
+  };
+
+  const handleUpdateAppointmentStatus = async (apt, status, confirmMessage) => {
+    if (!apt?._id) return;
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
+
+    try {
+      const success = await doctorService.updateAppointmentStatus(apt._id, status);
+      if (success) {
+        if (selectedAudit?._id === apt._id) setSelectedAudit(null);
+        await fetchData();
+      } else {
+        alert('Unable to update this appointment right now.');
+      }
+    } catch (err) {
+      console.error('Failed to update appointment status', err);
+      alert('Unable to update this appointment right now.');
+    }
+  };
+
+  const openCompletionPanel = () => {
+    setCompletionMode('completed');
+    setCompletionFiles([]);
+  };
+
+  const closeCompletionPanel = () => {
+    setCompletionMode(null);
+    setCompletionFiles([]);
+  };
+
+  const handleSaveCompletionFiles = async () => {
+    if (!selectedAudit?._id) return;
+
+    try {
+      setCompletionSaving(true);
+      const result = await doctorService.uploadAppointmentAttachments(
+        selectedAudit._id,
+        completionFiles,
+        'completed'
+      );
+
+      if (result?.appointment) {
+        setSelectedAudit(result.appointment);
+        setAppointments((prev) => prev.map((item) => (
+          item._id === result.appointment._id ? result.appointment : item
+        )));
+        setCompletionMode(null);
+        setCompletionFiles([]);
+      } else {
+        alert(result?.error || 'Unable to save the consultation files right now.');
+      }
+    } catch (err) {
+      console.error('Failed to save completion files', err);
+      alert('Unable to save the consultation files right now.');
+    } finally {
+      setCompletionSaving(false);
+    }
+  };
+
+  const handleCancelSelectedAudit = async () => {
+    if (!selectedAudit?._id) return;
+    await handleUpdateAppointmentStatus(selectedAudit, 'cancelled', 'Mark this consultation as cancelled?');
+    closeCompletionPanel();
+  };
+
+  const handleConfirmSchedule = async (e) => {
+    e.preventDefault();
+    if (!schedulingAppointment?._id) return;
+
+    try {
+      setSavingSchedule(true);
+      const start = new Date(`${scheduleForm.date}T${scheduleForm.time}`);
+      if (Number.isNaN(start.getTime())) {
+        alert('Please choose a valid date and time.');
+        return;
+      }
+
+      const duration = Number(scheduleForm.duration) || 30;
+      const end = new Date(start.getTime() + duration * 60000);
+
+      const updateData = {
+        status: 'confirmed',
+        type: scheduleForm.type,
+        startTime: start,
+        endTime: end,
+        duration,
+        notes: scheduleForm.notes,
+        fee: scheduleForm.fee === '' ? null : Number(scheduleForm.fee),
+        meetingType: scheduleForm.type === 'online' ? 'jitsi' : 'custom',
+        roomId: null,
+        meetingLink: null,
+        meetingStatus: 'scheduled',
+      };
+
+      const success = await doctorService.updateAppointment(schedulingAppointment._id, updateData);
+      if (success) {
+        setSchedulingAppointment(null);
+        await fetchData();
+      } else {
+        alert('Failed to confirm the request.');
+      }
+    } catch (err) {
+      console.error('Failed to confirm request', err);
+      alert('Failed to confirm the request.');
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
   const filteredAppointments = appointments.filter(apt => {
     const nameMatch = getPatientName(apt).toLowerCase().includes(searchTerm.toLowerCase());
     const statusMatch = getStatusBucket(apt) === statusFilter;
@@ -170,106 +334,116 @@ const Registry = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#f8fafc] flex">
+    <div className="min-h-screen w-full bg-[#f8fafc] overflow-x-hidden">
       <Sidebar />
 
-      <main className="flex-1 ml-72 p-12 max-w-[1600px]">
-        <header className="mb-8 flex items-center justify-between">
+      <main className="min-h-screen w-full pl-72 overflow-x-hidden">
+        <div className="mx-auto w-full max-w-[1600px] px-6 md:px-10 lg:px-12 py-10">
+        <header className="mb-8 flex items-center justify-between gap-4">
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4">
             <div className="h-12 w-12 bg-primary-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-primary-600/20">
               <History className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Clinical Registry</h1>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-2">Unified Historical Audit Trail</p>
+              <h1 className="text-2xl md:text-[2.15rem] font-black text-slate-900 tracking-tight leading-none">Clinical Registry</h1>
+              <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-[0.28em] mt-1.5">Unified Historical Audit Trail</p>
             </div>
           </motion.div>
         </header>
 
-        {/* ENHANCED COMMAND CENTER - LARGER PRESENCE */}
-        <div className="bg-white p-3 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 mb-12 flex items-center gap-6">
-          {/* Integrated Search */}
-          <div className="relative group w-80">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 group-focus-within:text-primary-500 transition-colors" />
-            <input
-              type="text"
-              placeholder="Search patients..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-50 border border-transparent rounded-[1.5rem] py-4 pl-13 pr-6 text-sm font-bold text-slate-700 placeholder:text-slate-300 focus:bg-white focus:border-primary-500/20 outline-none transition-all h-14"
-            />
-          </div>
+        {/* ENHANCED COMMAND CENTER */}
+        <div className="bg-white p-4 md:p-5 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 mb-12 space-y-4">
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,420px)_1fr] gap-4 xl:gap-6 items-center">
+            {/* Integrated Search */}
+            <div className="relative group w-full min-w-0">
+              <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 group-focus-within:text-primary-500 transition-colors" />
+              <input
+                type="text"
+                placeholder="Search patients..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-slate-50 border border-transparent rounded-[1.5rem] py-4 pl-13 pr-6 text-sm font-bold text-slate-700 placeholder:text-slate-300 focus:bg-white focus:border-primary-500/20 outline-none transition-all h-14"
+              />
+            </div>
 
-          <div className="h-8 w-[1px] bg-slate-100" />
+            {/* Secondary Filters - Compact */}
+            <div className="flex flex-wrap items-center justify-end gap-3 min-w-0">
+              <div className="hidden lg:inline-flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2 border border-slate-100 text-[8px] font-black uppercase tracking-[0.2em] text-slate-400">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Quick filters
+              </div>
+
+              <div className="relative group/filter h-14 flex items-center shrink-0">
+                <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-primary-600/50" />
+                <select
+                  value={dateRangeFilter}
+                  onChange={(e) => setDateRangeFilter(e.target.value)}
+                  className="bg-slate-50 border border-transparent text-slate-500 text-[9px] font-black uppercase tracking-[0.22em] rounded-2xl pl-11 pr-8 h-11 outline-none focus:bg-white focus:border-primary-500/20 appearance-none cursor-pointer hover:bg-slate-100 transition-all min-w-[150px]"
+                >
+                  <option value="all">Any Date</option>
+                  <option value="7days">7 Days</option>
+                  <option value="30days">30 Days</option>
+                  <option value="ytd">Yearly</option>
+                </select>
+              </div>
+
+              <div className="relative group/filter h-14 flex items-center shrink-0">
+                <Video className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-500/50" />
+                <select
+                  value={modeFilter}
+                  onChange={(e) => setModeFilter(e.target.value)}
+                  className="bg-slate-50 border border-transparent text-slate-500 text-[9px] font-black uppercase tracking-[0.22em] rounded-2xl pl-11 pr-8 h-11 outline-none focus:bg-white focus:border-primary-500/20 appearance-none cursor-pointer hover:bg-slate-100 transition-all min-w-[150px]"
+                >
+                  <option value="all">Any Mode</option>
+                  <option value="video">Video</option>
+                  <option value="audio">Audio</option>
+                  <option value="clinic">Clinic</option>
+                </select>
+              </div>
+
+              {(searchTerm || dateRangeFilter !== 'all' || modeFilter !== 'all' || apptTypeFilter !== 'all') && (
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setDateRangeFilter('all');
+                    setModeFilter('all');
+                    setApptTypeFilter('all');
+                  }}
+                  className="h-11 w-11 flex items-center justify-center bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-500 hover:text-white transition-all group/clear border border-rose-100 shadow-sm"
+                  title="Clear All Filters"
+                >
+                  <X className="h-4 w-4 transition-transform group-hover:rotate-90" />
+                </button>
+              )}
+            </div>
+          </div>
 
           {/* Analytics Tabs */}
-          <div className="flex bg-slate-50/80 p-1.5 rounded-[1.8rem] items-center h-14">
-            {['confirmed', 'pending', 'cancelled', 'finished'].map(f => (
-              <button
-                key={f}
-                onClick={() => setStatusFilter(f)}
-                className={`px-7 py-2 rounded-[1.2rem] flex items-center gap-3.5 transition-all whitespace-nowrap h-11 ${
-                  statusFilter === f 
-                    ? 'bg-white text-primary-600 shadow-sm border border-slate-100' 
-                    : 'text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                <span className="text-[10px] font-black uppercase tracking-widest">{f}</span>
-                <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg ${
-                  statusFilter === f ? 'bg-primary-50 text-primary-600' : 'bg-slate-200 text-slate-400'
-                }`}>
-                  {statusCounts[f]}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <div className="h-8 w-[1px] bg-slate-100" />
-
-          {/* Secondary Filters - Pill Style */}
-          <div className="flex items-center gap-3 flex-1 justify-end pr-3">
-            <div className="relative group/filter h-14 flex items-center">
-              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-primary-600/50" />
-              <select
-                value={dateRangeFilter}
-                onChange={(e) => setDateRangeFilter(e.target.value)}
-                className="bg-slate-50 border border-transparent text-slate-500 text-[10px] font-black uppercase tracking-widest rounded-2xl pl-11 pr-8 h-11 outline-none focus:bg-white focus:border-primary-500/20 appearance-none cursor-pointer hover:bg-slate-100 transition-all"
-              >
-                <option value="all">Any Date</option>
-                <option value="7days">7 Days</option>
-                <option value="30days">30 Days</option>
-                <option value="ytd">Yearly</option>
-              </select>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex bg-slate-50/80 p-1.5 rounded-[1.8rem] items-center gap-1 overflow-x-auto">
+              {['confirmed', 'pending', 'cancelled', 'finished'].map(f => (
+                <button
+                  key={f}
+                  onClick={() => setStatusFilter(f)}
+                  className={`px-4 py-2 rounded-[1.2rem] flex items-center gap-3 transition-all whitespace-nowrap h-10 shrink-0 ${
+                    statusFilter === f 
+                      ? 'bg-white text-primary-600 shadow-sm border border-slate-100' 
+                      : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  <span className="text-[9px] font-black uppercase tracking-[0.18em]">{f}</span>
+                  <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg ${
+                    statusFilter === f ? 'bg-primary-50 text-primary-600' : 'bg-slate-200 text-slate-400'
+                  }`}>
+                    {statusCounts[f]}
+                  </span>
+                </button>
+              ))}
             </div>
 
-            <div className="relative group/filter h-14 flex items-center">
-              <Video className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-500/50" />
-              <select
-                value={modeFilter}
-                onChange={(e) => setModeFilter(e.target.value)}
-                className="bg-slate-50 border border-transparent text-slate-500 text-[10px] font-black uppercase tracking-widest rounded-2xl pl-11 pr-8 h-11 outline-none focus:bg-white focus:border-primary-500/20 appearance-none cursor-pointer hover:bg-slate-100 transition-all"
-              >
-                <option value="all">Any Mode</option>
-                <option value="video">Video</option>
-                <option value="audio">Audio</option>
-                <option value="clinic">Clinic</option>
-              </select>
+            <div className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400 px-2">
+              Showing {statusCounts[statusFilter]} {statusFilter}
             </div>
-
-            {(searchTerm || dateRangeFilter !== 'all' || modeFilter !== 'all' || apptTypeFilter !== 'all') && (
-              <button
-                onClick={() => {
-                  setSearchTerm('');
-                  setDateRangeFilter('all');
-                  setModeFilter('all');
-                  setApptTypeFilter('all');
-                }}
-                className="h-11 w-11 flex items-center justify-center bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-500 hover:text-white transition-all group/clear border border-rose-100 shadow-sm"
-                title="Clear All Filters"
-              >
-                <X className="h-4 w-4 transition-transform group-hover:rotate-90" />
-              </button>
-            )}
           </div>
         </div>
 
@@ -297,7 +471,7 @@ const Registry = () => {
                     <User className="h-8 w-8 text-slate-200 group-hover:text-primary-600 transition-all" />
                   </div>
                   <div>
-                    <h4 className="text-base font-black text-slate-900 group-hover:text-primary-700 transition-colors">{getPatientName(apt)}</h4>
+                    <h4 className="text-sm md:text-[0.95rem] font-black text-slate-900 group-hover:text-primary-700 transition-colors">{getPatientName(apt)}</h4>
                     <div className="flex items-center gap-2 mt-1.5">
                       <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">#{apt._id?.slice(-6)}</span>
                       {apt.type && <span className="text-[9px] font-black text-primary-500 uppercase tracking-widest bg-primary-50/50 px-2 py-0.5 rounded-md border border-primary-100/50">{apt.type}</span>}
@@ -310,17 +484,17 @@ const Registry = () => {
                     <label className="text-[9px] font-black uppercase tracking-[2px] text-slate-300 mb-3">Registration Date</label>
                     <div className="flex items-center gap-3">
                       <Calendar className="h-4 w-4 text-primary-600/40" />
-                      <span className="text-sm font-bold text-slate-700">{new Date(apt.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
+                      <span className="text-xs md:text-sm font-bold text-slate-700">{new Date(apt.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
                     </div>
                   </div>
                   <div className="flex flex-col">
                     <label className="text-[9px] font-black uppercase tracking-[2px] text-slate-300 mb-3">Status Flag</label>
-                    <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl w-fit border ${
+                    <div className={`flex items-center gap-2.5 px-3.5 py-1.5 rounded-2xl w-fit border ${
                       getStatusBucket(apt) === 'confirmed' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' :
                       getStatusBucket(apt) === 'cancelled' ? 'bg-rose-50 border-rose-100 text-rose-600' :
                       getStatusBucket(apt) === 'finished' ? 'bg-slate-100 border-slate-200 text-slate-600' :
                       'bg-primary-50 border-primary-100 text-primary-600'
-                    } text-[10px] font-black uppercase tracking-widest`}>
+                    } text-[9px] font-black uppercase tracking-[0.18em]`}>
                       <div className={`h-1.5 w-1.5 rounded-full ${
                         getStatusBucket(apt) === 'confirmed' ? 'bg-emerald-500' : 
                         getStatusBucket(apt) === 'cancelled' ? 'bg-rose-500' : 
@@ -332,8 +506,37 @@ const Registry = () => {
                   </div>
                 </div>
 
-                <div className="opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center h-12 w-12 bg-primary-50 text-primary-600 rounded-2xl border border-primary-100">
-                  <ChevronRight className="h-5 w-5" />
+                <div className="flex items-center gap-3 ml-auto">
+                  {getStatusBucket(apt) === 'pending' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openScheduleModal(apt);
+                        }}
+                        className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-emerald-600 text-white text-[9px] font-black uppercase tracking-[0.16em] shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleDeleteRequest(apt);
+                        }}
+                        className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-rose-50 text-rose-600 text-[9px] font-black uppercase tracking-[0.16em] border border-rose-100 hover:bg-rose-100 transition-all"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </button>
+                    </>
+                  ) : (
+                    <div className="opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center h-10 w-10 bg-primary-50 text-primary-600 rounded-2xl border border-primary-100">
+                      <ChevronRight className="h-5 w-5" />
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )) : (
@@ -341,8 +544,8 @@ const Registry = () => {
                 <div className="h-20 w-20 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
                   <Search className="h-8 w-8 text-slate-200" />
                 </div>
-                <h3 className="text-xl font-black text-slate-900 mb-2">No Matching Records</h3>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Adjust your filters or search terms to try again</p>
+                <h3 className="text-lg font-black text-slate-900 mb-2">No Matching Records</h3>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.18em]">Adjust your filters or search terms to try again</p>
               </motion.div>
             )}
           </div>
@@ -356,103 +559,209 @@ const Registry = () => {
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="relative w-full max-w-4xl bg-white rounded-[3.5rem] shadow-2xl flex flex-col border border-slate-100 overflow-hidden max-h-[90vh]"
+                className="relative w-full max-w-5xl bg-white rounded-[2.5rem] shadow-2xl flex flex-col border border-slate-100 overflow-hidden max-h-[90vh]"
               >
-                <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="px-6 md:px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                   <div className="flex items-center gap-5">
-                    <div className="h-14 w-14 bg-primary-600 rounded-[1.4rem] flex items-center justify-center shadow-lg shadow-primary-600/20 text-white">
-                      <History className="h-7 w-7" />
+                    <div className="h-12 w-12 bg-primary-600 rounded-[1.3rem] flex items-center justify-center shadow-lg shadow-primary-600/20 text-white">
+                      <History className="h-6 w-6" />
                     </div>
                     <div>
-                      <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none mb-1.5">Clinical Session Audit</h3>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">Session ID: #{selectedAudit._id}</p>
+                      <h3 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight leading-none mb-1.5">Clinical Session Audit</h3>
+                      <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-[0.26em]">Session ID: #{selectedAudit._id}</p>
                     </div>
                   </div>
-                  <button onClick={() => setSelectedAudit(null)} className="h-12 w-12 flex items-center justify-center rounded-2xl bg-white hover:bg-rose-50 hover:text-rose-500 transition-all text-slate-400 border border-slate-100"><X size={20} /></button>
+                  <button onClick={() => setSelectedAudit(null)} className="h-11 w-11 flex items-center justify-center rounded-2xl bg-white hover:bg-rose-50 hover:text-rose-500 transition-all text-slate-400 border border-slate-100"><X size={18} /></button>
                 </div>
 
-                <div className="p-10 overflow-y-auto custom-scrollbar flex-1 space-y-10">
+                <div className="p-5 md:p-7 overflow-y-auto custom-scrollbar flex-1 space-y-7">
                   {/* Patient Header Card */}
-                  <div className="bg-white border border-slate-100 p-8 rounded-[2.5rem] shadow-sm flex items-center gap-8">
-                    <div className="h-20 w-20 rounded-[1.8rem] bg-slate-50 flex items-center justify-center border border-slate-100">
-                      <User className="h-10 w-10 text-slate-200" />
+                  <div className="bg-white border border-slate-100 p-6 rounded-[2.2rem] shadow-sm flex items-center gap-6">
+                    <div className="h-16 w-16 rounded-[1.5rem] bg-slate-50 flex items-center justify-center border border-slate-100">
+                      <User className="h-8 w-8 text-slate-200" />
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-2xl font-black text-slate-900">{getPatientName(selectedAudit)}</h4>
-                        <div className="flex items-center gap-2 px-4 py-1.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 text-[10px] font-black uppercase tracking-widest">
+                        <h4 className="text-xl md:text-2xl font-black text-slate-900">{getPatientName(selectedAudit)}</h4>
+                        <div className="flex items-center gap-2 px-3.5 py-1.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 text-[9px] font-black uppercase tracking-[0.16em]">
                           <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                           Authenticated Session
                         </div>
                       </div>
-                      <div className="grid grid-cols-3 gap-8">
+                      <div className="grid grid-cols-3 gap-6">
                         <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-300 block mb-1">Date</label>
+                          <label className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-300 block mb-1">Date</label>
                           <span className="text-xs font-bold text-slate-600">{new Date(selectedAudit.createdAt).toLocaleDateString(undefined, { dateStyle: 'full' })}</span>
                         </div>
                         <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-300 block mb-1">Mode</label>
+                          <label className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-300 block mb-1">Mode</label>
                           <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                             {selectedAudit.type === 'online' ? <Video size={14} className="text-indigo-500" /> : <Building2 size={14} className="text-emerald-500" />}
                             <span className="uppercase">{selectedAudit.type || 'In-Person'}</span>
                           </div>
                         </div>
                         <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-300 block mb-1">Duration</label>
+                          <label className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-300 block mb-1">Duration</label>
                           <span className="text-xs font-bold text-slate-600">{selectedAudit.duration || '30'} Minutes</span>
                         </div>
                       </div>
                     </div>
                   </div>
 
+                  {selectedAudit.attachments?.length > 0 && (
+                    <div className="bg-slate-50 border border-slate-100 p-5 rounded-[2rem] space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Saved Files</div>
+                          <div className="text-sm font-semibold text-slate-600 mt-1">Open or download the files attached to this consultation.</div>
+                        </div>
+                        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
+                          {selectedAudit.attachments.length} File{selectedAudit.attachments.length > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="grid gap-2">
+                        {selectedAudit.attachments.map((attachment, index) => (
+                          <a
+                            key={`${attachment.fileName || attachment.originalName || 'attachment'}-${index}`}
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            download={attachment.originalName || true}
+                            className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left hover:border-primary-200 hover:shadow-sm transition-all"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-bold text-slate-900">{attachment.originalName || attachment.fileName || 'Consultation File'}</div>
+                              <div className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 mt-1">
+                                {attachment.mimeType || 'attachment'}
+                              </div>
+                            </div>
+                            <div className="text-[9px] font-black uppercase tracking-[0.18em] text-primary-600 shrink-0">Open</div>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {getStatusBucket(selectedAudit) === 'confirmed' && (selectedAudit.type === 'clinic' || selectedAudit.type === 'follow-up') && (
+                    <div className="bg-white border border-slate-100 rounded-[2rem] p-5 space-y-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                          <div className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Consultation Outcome</div>
+                          <div className="text-sm font-semibold text-slate-600 mt-1">Mark the visit as completed with optional supporting files, or cancel it.</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={openCompletionPanel}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            Completed
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelSelectedAudit}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-rose-50 px-4 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-rose-600 border border-rose-100 hover:bg-rose-100 transition-all"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Cancelled
+                          </button>
+                        </div>
+                      </div>
+
+                      {completionMode === 'completed' && (
+                        <div className="space-y-3 rounded-[1.5rem] border border-emerald-100 bg-emerald-50/50 p-4">
+                          <div className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-700">Add files for this completed consultation</div>
+                          <input
+                            type="file"
+                            multiple
+                            accept=".pdf,.txt,.png,.jpg,.jpeg,.webp,.gif,image/*,text/plain,application/pdf"
+                            onChange={(event) => setCompletionFiles(Array.from(event.target.files || []))}
+                            className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-2xl file:border-0 file:bg-white file:px-4 file:py-2.5 file:text-[9px] file:font-black file:uppercase file:tracking-[0.16em] file:text-slate-700 hover:file:bg-slate-50"
+                          />
+                          {completionFiles.length > 0 && (
+                            <div className="space-y-2">
+                              {completionFiles.map((file, index) => (
+                                <div key={`${file.name}-${index}`} className="rounded-2xl bg-white px-4 py-2.5 border border-slate-100 text-sm font-semibold text-slate-700 flex items-center justify-between gap-3">
+                                  <span className="truncate">{file.name}</span>
+                                  <span className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400 shrink-0">
+                                    {file.type || 'file'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={closeCompletionPanel}
+                              className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-slate-600 hover:bg-slate-50 transition-all"
+                              disabled={completionSaving}
+                            >
+                              Back
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSaveCompletionFiles}
+                              disabled={completionSaving}
+                              className="flex-1 rounded-2xl bg-emerald-600 px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {completionSaving ? 'Saving...' : 'Save Completed'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Diagnosis Section */}
                   <div className="space-y-6">
                     <div className="flex items-center gap-4">
                       <div className="h-[1px] flex-1 bg-slate-100" />
-                      <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-300">Clinical Findings</span>
+                      <span className="text-[9px] font-black uppercase tracking-[0.32em] text-slate-300">Clinical Findings</span>
                       <div className="h-[1px] flex-1 bg-slate-100" />
                     </div>
 
                     <div className="space-y-4">
                       {parseDiagnosis(selectedAudit.sessionData?.diagnosis).length > 0 ? (
                         parseDiagnosis(selectedAudit.sessionData?.diagnosis).map((report, i) => (
-                          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="group/report p-8 rounded-[2.5rem] bg-slate-50 border border-slate-100 hover:bg-white hover:shadow-xl hover:shadow-primary-600/5 hover:border-primary-100 transition-all">
-                            <div className="flex items-center justify-between mb-6">
+                          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="group/report p-6 rounded-[2.25rem] bg-slate-50 border border-slate-100 hover:bg-white hover:shadow-xl hover:shadow-primary-600/5 hover:border-primary-100 transition-all">
+                            <div className="flex items-center justify-between mb-5">
                               <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 bg-white rounded-xl flex items-center justify-center text-primary-600 shadow-sm border border-slate-100">
-                                  <Info size={20} />
+                                <div className="h-9 w-9 bg-white rounded-xl flex items-center justify-center text-primary-600 shadow-sm border border-slate-100">
+                                  <Info size={18} />
                                 </div>
-                                <span className="text-sm font-black text-slate-900 uppercase tracking-widest">{report.title}</span>
+                                <span className="text-[13px] font-black text-slate-900 uppercase tracking-[0.16em]">{report.title}</span>
                               </div>
                               <button 
                                 onClick={() => downloadMedicalReportPDF(report.reportData, { reportType: report.reportType, reportTitle: report.title })}
-                                className="flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-primary-600 hover:text-white text-primary-600 rounded-xl border border-slate-100 transition-all text-[10px] font-black uppercase tracking-widest shadow-sm"
+                                className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-primary-600 hover:text-white text-primary-600 rounded-xl border border-slate-100 transition-all text-[9px] font-black uppercase tracking-[0.16em] shadow-sm"
                               >
-                                <Download size={14} />
+                                <Download size={13} />
                                 Download Report
                               </button>
                             </div>
-                            <div className="bg-white p-6 rounded-2xl border border-slate-100 text-sm text-slate-600 leading-relaxed font-medium">
+                            <div className="bg-white p-5 rounded-2xl border border-slate-100 text-sm text-slate-600 leading-relaxed font-medium">
                               {report.reportData?.diagnosis?.reasoning || report.reportData?.lifestyleChanges || "Detailed clinical analysis summary is available in the attached PDF document."}
                             </div>
                           </motion.div>
                         ))
                       ) : (
-                        <div className="py-20 text-center bg-slate-50 rounded-[3rem] border border-dashed border-slate-200">
-                          <div className="h-16 w-16 bg-white rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 border border-slate-100">
-                            <Info className="h-8 w-8 text-slate-200" />
-                          </div>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">No clinical reports found for this session</p>
+                          <div className="py-16 text-center bg-slate-50 rounded-[3rem] border border-dashed border-slate-200">
+                            <div className="h-14 w-14 bg-white rounded-[1.4rem] flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                              <Info className="h-7 w-7 text-slate-200" />
+                            </div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.18em]">No clinical reports found for this session</p>
                         </div>
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className="p-10 bg-slate-50/50 border-t border-slate-100 flex items-center gap-4">
+                <div className="p-5 md:p-6 bg-slate-50/50 border-t border-slate-100 flex items-center gap-4">
                   <button 
                     onClick={() => setSelectedAudit(null)}
-                    className="flex-1 py-4.5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-slate-900/10 hover:bg-slate-800 transition-all"
+                    className="flex-1 py-3.5 bg-slate-900 text-white rounded-2xl text-[9px] font-black uppercase tracking-[0.18em] shadow-xl shadow-slate-900/10 hover:bg-slate-800 transition-all"
                   >
                     Archive & Close Registry Audit
                   </button>
@@ -461,6 +770,113 @@ const Registry = () => {
             </div>
           )}
         </AnimatePresence>
+
+        <AnimatePresence>
+          {schedulingAppointment && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 md:p-4 lg:p-6">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+                onClick={() => !savingSchedule && setSchedulingAppointment(null)}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative w-full max-w-[860px] max-h-[88vh] bg-white rounded-[1.75rem] shadow-2xl border border-slate-100 overflow-hidden flex flex-col"
+              >
+                <div className="px-4 md:px-5 py-3.5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[8px] font-black uppercase tracking-[0.22em] text-slate-400">Pending Request</p>
+                    <h3 className="text-lg md:text-xl font-black text-slate-900 tracking-tight mt-1">Confirm and schedule visit</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => !savingSchedule && setSchedulingAppointment(null)}
+                    className="h-9 w-9 rounded-2xl border border-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all flex items-center justify-center"
+                    disabled={savingSchedule}
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+
+                <form onSubmit={handleConfirmSchedule} className="p-4 md:p-5 space-y-4 overflow-y-auto flex-1">
+                  <AvailabilityScheduler
+                    availabilityTimings={doctorData?.availability?.timings}
+                    appointments={appointments}
+                    selectedDate={scheduleForm.date}
+                    selectedTime={scheduleForm.time}
+                    duration={scheduleForm.duration}
+                    onDateChange={(date) => setScheduleForm((prev) => ({ ...prev, date }))}
+                    onTimeChange={(time) => setScheduleForm((prev) => ({ ...prev, time }))}
+                    onDurationChange={(duration) => setScheduleForm((prev) => ({ ...prev, duration }))}
+                    showDurationControl
+                  />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="space-y-2">
+                      <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Visit Type</span>
+                      <select
+                        value={scheduleForm.type}
+                        onChange={(event) => setScheduleForm((prev) => ({ ...prev, type: event.target.value }))}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-primary-300 focus:bg-white"
+                      >
+                        <option value="clinic">Clinic</option>
+                        <option value="online">Online</option>
+                        <option value="follow-up">Follow-up</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-2 md:col-span-2">
+                      <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Fee</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={scheduleForm.fee}
+                        onChange={(event) => setScheduleForm((prev) => ({ ...prev, fee: event.target.value }))}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-primary-300 focus:bg-white"
+                        placeholder="Optional"
+                      />
+                    </label>
+
+                    <label className="space-y-2 md:col-span-2">
+                      <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Notes</span>
+                      <textarea
+                        rows="4"
+                        value={scheduleForm.notes}
+                        onChange={(event) => setScheduleForm((prev) => ({ ...prev, notes: event.target.value }))}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-primary-300 focus:bg-white resize-none"
+                        placeholder="Add visit notes or special instructions"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-1 sticky bottom-0 bg-white pb-1">
+                    <button
+                      type="button"
+                      onClick={() => !savingSchedule && setSchedulingAppointment(null)}
+                      className="flex-1 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 hover:bg-slate-50 transition-all"
+                      disabled={savingSchedule}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 rounded-2xl bg-emerald-600 px-5 py-3 text-[9px] font-black uppercase tracking-[0.2em] text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                      disabled={savingSchedule}
+                    >
+                      {savingSchedule ? 'Saving...' : 'Confirm Request'}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+        </div>
       </main>
     </div>
   );

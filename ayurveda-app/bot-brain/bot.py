@@ -319,15 +319,24 @@ def _extract_patient_info_from_history(history, dosha_profile):
 
         # Name Extraction (More aggressive)
         if patient_info["name"] == "Patient":
-            # Match "I am Rahul", "Name is Rahul", or just "Rahul, 25..."
-            name_match = re.search(r"(?:name\s*(?:is)?|i am|i'm)\s+([A-Z][a-z]+)", text)
-            if name_match:
-                patient_info["name"] = name_match.group(1).strip()
-            elif re.match(r"^([A-Z][a-z]+),\s*\d+", text): # "Rahul, 25..."
-                patient_info["name"] = re.match(r"^([A-Z][a-z]+)", text).group(1).strip()
+            name_patterns = [
+                r"\bname\s*[:=-]\s*([A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,4})",
+                r"\bmy name is\s+([A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,4})",
+                r"\bi am\s+([A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,4})",
+                r"\bi'm\s+([A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,4})",
+            ]
+            for pattern in name_patterns:
+                name_match = re.search(pattern, text, re.IGNORECASE)
+                if name_match:
+                    patient_info["name"] = name_match.group(1).strip()
+                    break
+            if patient_info["name"] == "Patient":
+                compact_name = re.match(r"^([A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,4})\s*,\s*\d+", text)
+                if compact_name:
+                    patient_info["name"] = compact_name.group(1).strip()
 
     # AI Fallback for extraction if some fields are still missing
-    if patient_info["age"] == "N/A" or patient_info["gender"] == "N/A":
+    if patient_info["age"] == "N/A" or patient_info["gender"] == "N/A" or patient_info["name"] == "Patient":
         try:
             extraction_prompt = (
                 "Extract patient details from this conversation history as JSON. "
